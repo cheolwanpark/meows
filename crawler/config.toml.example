@@ -1,0 +1,26 @@
+# Example configuration for the crawler
+# Copy this to config.toml and fill in your values
+
+[output]
+# Where to write the output: "stdout" or a file path like "/tmp/output.json"
+destination = "stdout"
+
+[filter]
+# Keywords to match (case-insensitive, matches if ANY keyword is found in title or body)
+keywords = [
+    "rust",
+    "async",
+    "systems programming",
+]
+
+# Match mode: "any" (OR logic) or "all" (AND logic)
+# "any": post matches if it contains at least one keyword
+# "all": post matches only if it contains all keywords
+match_mode = "any"
+
+[sources.reddit]
+# Target subreddit (without the /r/ prefix)
+subreddit = "rust"
+
+# Maximum number of posts to fetch (max 100 per Reddit API)
+limit = 100
