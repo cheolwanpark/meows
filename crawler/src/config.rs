@@ -35,10 +35,16 @@ pub struct RedditConfig {
     pub subreddit: String,
     #[serde(default = "default_limit")]
     pub limit: usize,
+    #[serde(default = "default_user_agent")]
+    pub user_agent: String,
 }
 
 fn default_limit() -> usize {
     100
+}
+
+fn default_user_agent() -> String {
+    "crawler/0.1.0 (by /u/crawler_bot)".to_string()
 }
 
 impl Config {

@@ -3,5 +3,4 @@
 pub mod config;
 pub mod filter;
 pub mod output;
-pub mod reddit;
 pub mod source;

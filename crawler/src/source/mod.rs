@@ -1,6 +1,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+// Re-export source implementations
+pub mod reddit;
+
 /// Common content structure for crawled data across all sources
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Content {
@@ -30,6 +33,7 @@ pub trait Source {
     /// or if the response cannot be parsed
     fn fetch(&self) -> impl std::future::Future<Output = Result<Vec<Content>>> + Send;
 
-    /// Get the name of this source
+    /// Get the name of this source (for logging and identification)
+    #[allow(dead_code)]
     fn name(&self) -> &str;
 }

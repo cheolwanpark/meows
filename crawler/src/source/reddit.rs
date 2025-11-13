@@ -1,3 +1,4 @@
+use crate::config::RedditConfig;
 use crate::source::{Content, Source};
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -7,7 +8,8 @@ use std::time::Duration;
 /// Docs: https://www.reddit.com/dev/api/#GET_hot
 #[derive(Debug, Deserialize)]
 struct RedditResponse {
-    kind: String,  // "Listing" for post listings
+    #[allow(dead_code)]
+    kind: String,  // "Listing" for post listings (kept for deserialization)
     data: RedditData,
 }
 
@@ -38,32 +40,41 @@ struct RedditPost {
 /// Reddit API client
 pub struct RedditClient {
     client: reqwest::Client,
+    config: RedditConfig,
 }
 
 impl RedditClient {
-    /// Create a new Reddit client with custom User-Agent
-    pub fn new() -> Result<Self> {
+    /// Create a new Reddit client with configuration
+    pub fn new(config: RedditConfig) -> Result<Self> {
+        // Validate config
+        if config.subreddit.is_empty() {
+            anyhow::bail!("subreddit cannot be empty");
+        }
+        if config.subreddit.starts_with("/r/") || config.subreddit.starts_with("r/") {
+            anyhow::bail!("subreddit should not include '/r/' prefix");
+        }
+        if config.limit == 0 || config.limit > 100 {
+            anyhow::bail!("limit must be between 1 and 100, got {}", config.limit);
+        }
+        if config.user_agent.is_empty() {
+            anyhow::bail!("user_agent cannot be empty");
+        }
+
         let client = reqwest::Client::builder()
-            .user_agent("crawler/0.1.0 (by /u/crawler_bot)")
+            .user_agent(&config.user_agent)
             .timeout(Duration::from_secs(30))
             .build()
             .context("Failed to build HTTP client")?;
 
-        Ok(Self { client })
+        Ok(Self { client, config })
     }
 
-    /// Fetch hot posts from a subreddit
+    /// Fetch hot posts from a subreddit (internal implementation)
     ///
     /// # Arguments
     /// * `subreddit` - Name of subreddit (without /r/ prefix)
     /// * `limit` - Maximum number of posts to fetch (1-100)
-    ///
-    /// # Example
-    /// ```no_run
-    /// let client = RedditClient::new()?;
-    /// let posts = client.fetch_hot("rust", 50).await?;
-    /// ```
-    pub async fn fetch_hot(&self, subreddit: &str, limit: usize) -> Result<Vec<Content>> {
+    async fn fetch_hot(&self, subreddit: &str, limit: usize) -> Result<Vec<Content>> {
         let url = format!(
             "https://www.reddit.com/r/{}/hot.json?limit={}&raw_json=1",
             subreddit, limit
@@ -125,9 +136,8 @@ impl RedditClient {
 
 impl Source for RedditClient {
     async fn fetch(&self) -> Result<Vec<Content>> {
-        // Default to fetching 25 posts from "rust" subreddit
-        // In real usage, these would come from config
-        self.fetch_hot("rust", 25).await
+        // Use config values for subreddit and limit
+        self.fetch_hot(&self.config.subreddit, self.config.limit).await
     }
 
     fn name(&self) -> &str {

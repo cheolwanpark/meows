@@ -30,7 +30,22 @@ impl MatchMode {
 ///
 /// # Example
 /// ```
-/// let filtered = filter_by_keywords(posts, &["rust", "async"], MatchMode::Any);
+/// use crawler::filter::{filter_by_keywords, MatchMode};
+/// use crawler::source::Content;
+///
+/// let posts = vec![Content {
+///     id: "1".to_string(),
+///     title: "Rust async".to_string(),
+///     body: "".to_string(),
+///     url: None,
+///     author: "test".to_string(),
+///     created_utc: 0,
+///     score: 0,
+///     num_comments: 0,
+///     source: "test".to_string(),
+/// }];
+/// let keywords = vec!["rust".to_string(), "async".to_string()];
+/// let filtered = filter_by_keywords(posts, &keywords, MatchMode::Any);
 /// ```
 pub fn filter_by_keywords(
     contents: Vec<Content>,

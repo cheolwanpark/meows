@@ -1,11 +1,11 @@
 mod config;
 mod filter;
 mod output;
-mod reddit;
 mod source;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use source::Source;
 
 #[derive(Parser)]
 #[command(name = "crawler")]
@@ -35,21 +35,18 @@ async fn main() -> Result<()> {
         config.output.destination = output;
     }
 
-    // Create Reddit client
-    let reddit_client = reddit::RedditClient::new()
-        .context("Failed to create Reddit client")?;
-
-    // Fetch posts from Reddit
+    // Create Reddit client with config
+    let reddit_config = config.sources.reddit;
     eprintln!(
         "Fetching {} posts from /r/{}...",
-        config.sources.reddit.limit, config.sources.reddit.subreddit
+        reddit_config.limit, reddit_config.subreddit
     );
 
+    let reddit_client = source::reddit::RedditClient::new(reddit_config)
+        .context("Failed to create Reddit client")?;
+
     let contents = reddit_client
-        .fetch_hot(
-            &config.sources.reddit.subreddit,
-            config.sources.reddit.limit,
-        )
+        .fetch()
         .await
         .context("Failed to fetch posts from Reddit")?;
 
