@@ -1,26 +1,74 @@
 # Example configuration for the crawler
-# Copy this to config.toml and fill in your values
+# Copy this to config.toml and customize for your needs
 
-[output]
+[crawler]
+# General crawler settings
+
+# Output format (currently only "json" is supported)
+output_format = "json"
+
 # Where to write the output: "stdout" or a file path like "/tmp/output.json"
-destination = "stdout"
+# Can be overridden with --output flag
+output_destination = "stdout"
 
-[filter]
-# Keywords to match (case-insensitive, matches if ANY keyword is found in title or body)
-keywords = [
-    "rust",
-    "async",
-    "systems programming",
-]
+# Log level: error, warn, info, debug, trace
+# Can be overridden with --log-level flag
+log_level = "info"
 
-# Match mode: "any" (OR logic) or "all" (AND logic)
-# "any": post matches if it contains at least one keyword
-# "all": post matches only if it contains all keywords
-match_mode = "any"
+# Maximum number of sources to fetch from concurrently
+max_concurrency = 5
 
-[sources.reddit]
-# Target subreddit (without the /r/ prefix)
-subreddit = "rust"
+# User-Agent header for HTTP requests (REQUIRED by Reddit API)
+# Format: "appname/version (by /u/yourusername)" or similar
+user_agent = "crawler/0.1.0 (by /u/your_username)"
 
-# Maximum number of posts to fetch (max 100 per Reddit API)
-limit = 100
+# Source configurations
+# You can define multiple sources by adding multiple [[sources]] sections
+
+[[sources]]
+# Source type (currently only "reddit" is supported)
+type = "reddit"
+
+# Enable or disable this source
+enabled = true
+
+# Reddit-specific configuration
+subreddit = "rust"               # Target subreddit (without /r/ prefix)
+limit = 100                       # Number of posts to fetch (supports pagination)
+sort_by = "hot"                   # Sorting: "hot", "new", "top", or "rising"
+# time_filter = "day"             # Required for sort_by="top": hour, day, week, month, year, all
+min_score = 0                     # Filter posts below this score
+min_comments = 0                  # Filter posts with fewer comments
+user_agent = "crawler/0.1.0"      # User-Agent for this source
+rate_limit_delay_ms = 1000        # Delay between paginated requests (milliseconds)
+
+# Example: Another Reddit source for a different subreddit
+
+[[sources]]
+type = "reddit"
+enabled = false                   # Disabled by default
+subreddit = "programming"
+limit = 50
+sort_by = "new"
+min_score = 10
+min_comments = 2
+user_agent = "crawler/0.1.0"
+rate_limit_delay_ms = 1000
+
+# Example: Fetching top posts of the week
+
+# [[sources]]
+# type = "reddit"
+# enabled = false
+# subreddit = "rust"
+# limit = 100
+# sort_by = "top"
+# time_filter = "week"              # REQUIRED when sort_by="top"
+# min_score = 50
+# min_comments = 10
+# user_agent = "crawler/0.1.0"
+# rate_limit_delay_ms = 1000
+
+# Usage:
+# cat config.toml | cargo run -- --keywords "async" --keywords "tokio"
+# cat config.toml | cargo run -- --keywords "tutorial" --match-mode all --output results.json

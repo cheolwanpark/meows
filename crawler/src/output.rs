@@ -86,7 +86,8 @@ mod tests {
             created_utc: 1234567890,
             score: 100,
             num_comments: 10,
-            source: "test".to_string(),
+            source_type: "test".to_string(),
+            source_id: "test:1".to_string(),
         }
     }
 

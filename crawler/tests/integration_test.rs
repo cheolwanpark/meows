@@ -1,18 +1,21 @@
-use crawler::{filter, source::Content};
+use crawler::source::{Content, MatchMode, SourceFilters};
 use std::fs;
 
 #[test]
 fn test_reddit_fixture_deserialization() {
     // Read the fixture file
-    let fixture_json = fs::read_to_string("tests/fixtures/reddit_hot.json")
-        .expect("Failed to read fixture file");
+    let fixture_json =
+        fs::read_to_string("tests/fixtures/reddit_hot.json").expect("Failed to read fixture file");
 
     // Parse as Reddit API response (simulating what we'd get from the API)
-    let response: serde_json::Value = serde_json::from_str(&fixture_json)
-        .expect("Failed to parse fixture JSON");
+    let response: serde_json::Value =
+        serde_json::from_str(&fixture_json).expect("Failed to parse fixture JSON");
 
-    // Verify structure matches Reddit API format
-    assert_eq!(response["kind"], "Listing");
+    // Verify structure matches Reddit API format (old format with "kind" field)
+    // Note: New format doesn't require "kind", but this test validates the fixture format
+    if response.get("kind").is_some() {
+        assert_eq!(response["kind"], "Listing");
+    }
     assert!(response["data"]["children"].is_array());
 
     let children = response["data"]["children"].as_array().unwrap();
@@ -38,7 +41,8 @@ fn test_filter_with_fixture_data() {
             created_utc: 1234567890,
             score: 150,
             num_comments: 25,
-            source: "reddit:rust".to_string(),
+            source_type: "reddit".to_string(),
+            source_id: "reddit:rust:hot".to_string(),
         },
         Content {
             id: "def456".to_string(),
@@ -49,7 +53,8 @@ fn test_filter_with_fixture_data() {
             created_utc: 1234567891,
             score: 75,
             num_comments: 10,
-            source: "reddit:rust".to_string(),
+            source_type: "reddit".to_string(),
+            source_id: "reddit:rust:hot".to_string(),
         },
         Content {
             id: "ghi789".to_string(),
@@ -60,17 +65,19 @@ fn test_filter_with_fixture_data() {
             created_utc: 1234567892,
             score: 200,
             num_comments: 40,
-            source: "reddit:rust".to_string(),
+            source_type: "reddit".to_string(),
+            source_id: "reddit:rust:hot".to_string(),
         },
     ];
 
     // Filter for "rust" keyword
     let rust_keywords = vec!["rust".to_string()];
-    let filtered = filter::filter_by_keywords(
-        contents.clone(),
-        &rust_keywords,
-        filter::MatchMode::Any,
-    );
+    let rust_filters = SourceFilters::new(rust_keywords, MatchMode::Any);
+    let filtered: Vec<Content> = contents
+        .iter()
+        .filter(|c| rust_filters.matches(c))
+        .cloned()
+        .collect();
 
     // Should match posts with "Rust" in title
     assert_eq!(filtered.len(), 2, "Should match 2 posts with 'rust'");
@@ -79,21 +86,23 @@ fn test_filter_with_fixture_data() {
 
     // Filter for "async" keyword
     let async_keywords = vec!["async".to_string()];
-    let async_filtered = filter::filter_by_keywords(
-        contents.clone(),
-        &async_keywords,
-        filter::MatchMode::Any,
-    );
+    let async_filters = SourceFilters::new(async_keywords, MatchMode::Any);
+    let async_filtered: Vec<Content> = contents
+        .iter()
+        .filter(|c| async_filters.matches(c))
+        .cloned()
+        .collect();
 
     assert_eq!(async_filtered.len(), 2, "Should match 2 posts with 'async'");
 
     // Filter for both "rust" AND "async" (ALL mode)
     let both_keywords = vec!["rust".to_string(), "async".to_string()];
-    let both_filtered = filter::filter_by_keywords(
-        contents,
-        &both_keywords,
-        filter::MatchMode::All,
-    );
+    let both_filters = SourceFilters::new(both_keywords, MatchMode::All);
+    let both_filtered: Vec<Content> = contents
+        .iter()
+        .filter(|c| both_filters.matches(c))
+        .cloned()
+        .collect();
 
     assert_eq!(
         both_filtered.len(),

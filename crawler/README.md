@@ -1,15 +1,18 @@
 # Crawler
 
-A minimal Rust CLI tool for crawling Reddit posts with keyword filtering.
+A minimal Rust CLI tool for crawling content from multiple sources with keyword filtering. Currently supports Reddit with extensible architecture for additional sources.
 
 ## Features
 
-- Fetch hot posts from Reddit subreddits
-- Filter posts by keywords (case-insensitive)
-- Support for ANY (OR) or ALL (AND) keyword matching
-- Output as JSON to stdout or file
-- Simple TOML configuration
-- Extensible architecture for adding more sources
+- **Multiple source support**: Configure multiple Reddit sources (different subreddits, sorting methods) in parallel
+- **Flexible sorting**: hot, new, top (with time filters), or rising posts
+- **Pagination**: Automatically handles pagination to fetch any number of posts
+- **Keyword filtering**: Case-insensitive substring matching with ANY/ALL modes
+- **Config-based filters**: Per-source min_score and min_comments filtering
+- **Rate limiting**: Configurable delays between requests
+- **Concurrent fetching**: Fetch from multiple sources simultaneously
+- **Stdin configuration**: Pipe-based config for better composability
+- **JSON output**: Clean JSON output to stdout or file
 
 ## Installation
 
@@ -19,61 +22,112 @@ cargo build --release
 
 ## Configuration
 
-Create a `config.toml` file (see `config.toml.example` for reference):
+Create a `config.toml` file (see `config.toml.example` for full reference):
 
 ```toml
-[output]
-destination = "stdout"  # or a file path like "/tmp/output.json"
+[crawler]
+user_agent = "crawler/0.1.0 (by /u/your_username)"  # REQUIRED by Reddit API
+output_destination = "stdout"
+max_concurrency = 5
 
-[filter]
-keywords = ["rust", "async"]
-match_mode = "any"  # "any" or "all"
-
-[sources.reddit]
+[[sources]]
+type = "reddit"
+enabled = true
 subreddit = "rust"
-limit = 25
+limit = 100
+sort_by = "hot"
+min_score = 0
+min_comments = 0
+user_agent = "crawler/0.1.0"
+rate_limit_delay_ms = 1000
+
+[[sources]]
+type = "reddit"
+enabled = true
+subreddit = "programming"
+limit = 50
+sort_by = "new"
+min_score = 10
+min_comments = 2
+user_agent = "crawler/0.1.0"
+rate_limit_delay_ms = 1000
 ```
 
 ### Configuration Options
 
-#### `[output]`
-- `destination`: Where to write output ("stdout" or file path)
+#### `[crawler]` - General Settings
+- `user_agent`: User-Agent header (REQUIRED by Reddit API)
+- `output_format`: Output format, currently "json" only
+- `output_destination`: "stdout" or file path (can override with `--output`)
+- `log_level`: error, warn, info, debug, trace (can override with `--log-level`)
+- `max_concurrency`: Max sources to fetch from simultaneously
 
-#### `[filter]`
-- `keywords`: List of keywords to search for (case-insensitive)
-- `match_mode`:
-  - `"any"` - Match posts containing at least one keyword (OR logic)
-  - `"all"` - Match posts containing all keywords (AND logic)
+#### `[[sources]]` - Source Definitions
+You can define multiple sources by repeating the `[[sources]]` section.
 
-#### `[sources.reddit]`
-- `subreddit`: Target subreddit name (without /r/ prefix)
-- `limit`: Maximum posts to fetch (1-100)
+**Common fields:**
+- `type`: Source type, currently only "reddit"
+- `enabled`: Enable/disable this source
+
+**Reddit-specific fields:**
+- `subreddit`: Target subreddit (without /r/ prefix)
+- `limit`: Number of posts to fetch (supports pagination for any limit)
+- `sort_by`: Sorting method - "hot", "new", "top", or "rising"
+- `time_filter`: Required for "top" sorting - "hour", "day", "week", "month", "year", "all"
+- `min_score`: Filter posts below this score
+- `min_comments`: Filter posts with fewer than this many comments
+- `user_agent`: User-Agent for this source
+- `rate_limit_delay_ms`: Delay between paginated requests (milliseconds)
 
 ## Usage
 
-### Basic usage with default config
+The new usage pattern uses **stdin for configuration** and **CLI arguments for queries**:
+
 ```bash
-cargo run
+cat config.toml | cargo run -- --keywords <KEYWORDS>... [OPTIONS]
 ```
 
-### Use custom config file
+### Basic Examples
+
 ```bash
-cargo run -- --config my-config.toml
+# Search for posts containing "async"
+cat config.toml | cargo run -- --keywords "async"
+
+# Search for posts containing "async" OR "tokio"
+cat config.toml | cargo run -- --keywords "async" --keywords "tokio"
+
+# Search for posts containing "rust" AND "async" (all keywords must match)
+cat config.toml | cargo run -- --keywords "rust" --keywords "async" --match-mode all
+
+# Output to file
+cat config.toml | cargo run -- --keywords "tutorial" --output results.json
+
+# Override log level
+cat config.toml | cargo run -- --keywords "rust" --log-level debug
+
+# Pipe output to jq for processing
+cat config.toml | cargo run -- --keywords "rust" | jq '.[].title'
 ```
 
-### Override output destination
-```bash
-cargo run -- --output /tmp/results.json
-```
+### CLI Options
 
-### Example: Pipe to jq
-```bash
-cargo run | jq '.[].title'
-```
+- `--keywords <KEYWORD>`: Search keyword (can be specified multiple times, required)
+- `--match-mode <MODE>`: Keyword matching mode - "any" (default) or "all"
+- `-o, --output <PATH>`: Override output destination
+- `--log-level <LEVEL>`: Override log level
+
+### Keyword Matching
+
+- **Case-insensitive**: "Rust", "rust", "RUST" all match
+- **Substring matching**: "async" matches "asynchronous", "async/await"
+- **Title and body**: Searches in both post title and body text
+- **Match modes**:
+  - `any` (default): Post matches if it contains ANY keyword (OR logic)
+  - `all`: Post matches only if it contains ALL keywords (AND logic)
 
 ## Output Format
 
-The crawler outputs JSON array of posts:
+The crawler outputs a JSON array of posts:
 
 ```json
 [
@@ -86,48 +140,135 @@ The crawler outputs JSON array of posts:
     "created_utc": 1234567890,
     "score": 100,
     "num_comments": 25,
-    "subreddit": "rust"
+    "source_type": "reddit",
+    "source_id": "reddit:rust:hot"
   }
 ]
 ```
 
+**Fields:**
+- `source_type`: Type of source ("reddit", etc.)
+- `source_id`: Unique identifier for the source instance (format: "reddit:subreddit:sort_by")
+
 ## Testing
 
-Run tests:
+Run unit tests:
 ```bash
 cargo test
+```
+
+Run integration tests:
+```bash
+cargo test --test integration_test
 ```
 
 ## Architecture
 
 ```
 src/
-├── main.rs       - CLI and orchestration
-├── config.rs     - TOML configuration parsing and validation
-├── reddit.rs     - Reddit API client
-├── filter.rs     - Keyword filtering logic
-└── output.rs     - JSON output formatting
+├── main.rs           - CLI argument parsing and orchestration
+├── config.rs         - TOML configuration with tagged enum deserialization
+├── source/
+│   ├── mod.rs        - Source trait, filters, and factory
+│   └── reddit.rs     - Reddit API client with pagination
+└── output.rs         - JSON output formatting
+```
+
+### Source Abstraction
+
+The `Source` trait provides a clean abstraction for content sources:
+
+```rust
+pub trait Source: Send + Sync {
+    async fn fetch(&self, filters: &SourceFilters) -> Result<Vec<Content>>;
+    fn source_type(&self) -> &str;
+    fn source_id(&self) -> String;
+}
 ```
 
 ### Adding New Sources
 
-The architecture is designed to be extensible. To add a new source:
+To add a new content source:
 
-1. Define your source struct with fetch logic
-2. Map your source's data to the `Content` struct
-3. Add configuration schema to `config.rs`
-4. Update `main.rs` to support the new source
+1. **Define config struct** in `config.rs`:
+   ```rust
+   #[derive(Deserialize)]
+   pub struct MySourceConfig {
+       // source-specific fields
+   }
+   ```
+
+2. **Add enum variant** in `config.rs`:
+   ```rust
+   #[serde(tag = "type")]
+   pub enum SourceConfig {
+       Reddit(RedditConfig),
+       MySource(MySourceConfig),  // Add this
+   }
+   ```
+
+3. **Implement source** in `src/source/mysource.rs`:
+   ```rust
+   pub struct MySourceClient { /* ... */ }
+
+   impl Source for MySourceClient {
+       async fn fetch(&self, filters: &SourceFilters) -> Result<Vec<Content>> {
+           // Fetch and filter content
+       }
+
+       fn source_type(&self) -> &str { "mysource" }
+       fn source_id(&self) -> String { /* unique ID */ }
+   }
+   ```
+
+4. **Update factory** in `src/source/mod.rs`:
+   ```rust
+   pub fn build_source(config: SourceConfig, client: Arc<Client>) -> Result<Box<dyn Source>> {
+       match config {
+           SourceConfig::Reddit(c) => Ok(Box::new(RedditClient::new(c, client)?)),
+           SourceConfig::MySource(c) => Ok(Box::new(MySourceClient::new(c, client)?)),
+       }
+   }
+   ```
+
+No changes needed to `main.rs` - the factory pattern handles instantiation automatically!
+
+## Implementation Details
+
+### Reddit API
+
+- Uses public JSON endpoints (no OAuth required)
+- User-Agent header is required by Reddit API
+- Respects rate limiting with configurable delays
+- Pagination handled automatically via `after` tokens
+- Supports multiple sorting methods and time filters
+
+### Concurrency
+
+- Multiple sources fetch concurrently up to `max_concurrency` limit
+- Uses `futures::stream` with `.buffered()` for controlled concurrency
+- Fail-fast behavior: any source error stops entire operation
+
+### Configuration Parsing
+
+- Uses serde's tagged enum feature for type-safe source configs
+- Comprehensive validation at parse time
+- Clear error messages for configuration issues
 
 ## Notes
 
-- The crawler respects Reddit's API by using a custom User-Agent
-- No authentication required (uses public JSON endpoints)
-- Rate limiting: Reddit may throttle requests if too frequent
-- Stderr is used for progress messages, stdout for JSON output
+- **Stdin-only**: Configuration must be piped via stdin (no file path argument)
+- **Keywords required**: At least one keyword must be provided via CLI
+- **User-Agent required**: Reddit API requires a descriptive User-Agent header
+- **Rate limiting**: Configure `rate_limit_delay_ms` to avoid 429 errors
+- **Stderr for logs**: Progress messages go to stderr, JSON output to stdout
+- **Fail-fast**: Any source failure stops the entire crawl
 
 ## Future Enhancements
 
-- Add BM25 ranking for better keyword matching
-- Support multiple subreddits in parallel
-- Add more content sources (Hacker News, etc.)
-- OAuth authentication for higher rate limits
+- OAuth authentication for higher Reddit rate limits
+- Additional sources (Hacker News, Stack Overflow, etc.)
+- BM25 ranking for relevance scoring
+- Regex pattern matching for keywords
+- Export to other formats (CSV, JSONL)
+- Resume/checkpoint support for large crawls
