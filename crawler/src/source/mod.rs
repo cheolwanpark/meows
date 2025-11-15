@@ -5,9 +5,11 @@ use std::sync::Arc;
 
 // Re-export source implementations
 pub mod reddit;
+pub mod semantic_scholar;
 
 use crate::config::SourceConfig;
 use reddit::RedditClient;
+use semantic_scholar::SemanticScholarClient;
 
 /// Common content structure for crawled data across all sources
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +129,9 @@ pub fn build_source(
     match config {
         SourceConfig::Reddit(reddit_config) => {
             Ok(Box::new(RedditClient::new(reddit_config, client)?))
+        }
+        SourceConfig::SemanticScholar(semantic_scholar_config) => {
+            Ok(Box::new(SemanticScholarClient::new(semantic_scholar_config, client)?))
         }
     }
 }

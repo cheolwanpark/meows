@@ -1,0 +1,66 @@
+# Example configuration for Semantic Scholar crawler
+# Get your API key at: https://www.semanticscholar.org/product/api
+# Usage: cat semantic_scholar.example.toml | cargo run -- --keywords "neural" --keywords "learning"
+
+[crawler]
+user_agent = "meows-crawler/0.1.0"
+output_destination = "stdout"
+max_concurrency = 2
+log_level = "info"
+
+# Semantic Scholar: Search for papers by keyword
+
+[[sources]]
+type = "semanticscholar"
+enabled = true
+mode = "search"                   # Mode: "search" or "recommendations"
+query = "large language models"   # Search query (required for search mode)
+year = "2023-2024"               # Optional: year filter ("2020", "2020-2024", "2020-", or "-2024")
+max_results = 10                  # Total results to fetch
+min_citations = 50                # Filter papers with fewer citations
+rate_limit_delay_ms = 1000        # Delay between paginated requests
+api_key = "YOUR_API_KEY_HERE"     # Optional: API key for higher rate limits (10 req/sec vs 1 req/sec)
+
+# Example: Different search query
+
+[[sources]]
+type = "semanticscholar"
+enabled = false
+mode = "search"
+query = "transformer neural networks"
+year = "2020-"                    # Papers from 2020 onwards
+max_results = 20
+min_citations = 100
+rate_limit_delay_ms = 1000
+api_key = "YOUR_API_KEY_HERE"
+
+# Example: Get recommendations for a specific paper
+
+[[sources]]
+type = "semanticscholar"
+enabled = false
+mode = "recommendations"          # Get recommendations for a paper
+paper_id = "649def34f8be52c8b66281af98ae884c09aef38b"  # Paper ID (required for recommendations mode)
+max_results = 15                  # Maximum recommendations to fetch
+min_citations = 10                # Filter recommendations with fewer citations
+rate_limit_delay_ms = 1000
+api_key = "YOUR_API_KEY_HERE"
+
+# Example: Recommendations using DOI
+
+[[sources]]
+type = "semanticscholar"
+enabled = false
+mode = "recommendations"
+paper_id = "10.18653/v1/2020.acl-main.447"  # DOI format also supported
+max_results = 10
+min_citations = 5
+rate_limit_delay_ms = 1000
+api_key = "YOUR_API_KEY_HERE"
+
+# Usage examples:
+# cat semantic_scholar.example.toml | cargo run -- --keywords "attention" --keywords "mechanism"
+# cat semantic_scholar.example.toml | cargo run -- --keywords "deep learning" --match-mode all --output papers.json
+#
+# Note: Without API key, rate limit is ~1 request/second. With API key: ~10 requests/second
+# Pagination respects API's 10,000 offset limit for search results

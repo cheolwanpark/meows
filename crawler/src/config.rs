@@ -38,6 +38,7 @@ pub struct SourceEntry {
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum SourceConfig {
     Reddit(RedditConfig),
+    SemanticScholar(SemanticScholarConfig),
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -60,6 +61,36 @@ pub struct RedditConfig {
 
     #[serde(default = "default_user_agent")]
     pub user_agent: String,
+
+    #[serde(default = "default_rate_limit_delay_ms")]
+    pub rate_limit_delay_ms: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(tag = "mode", rename_all = "lowercase")]
+pub enum SemanticScholarMode {
+    Search {
+        query: String,
+        #[serde(default)]
+        year: Option<String>,
+    },
+    Recommendations {
+        paper_id: String,
+    },
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct SemanticScholarConfig {
+    #[serde(flatten)]
+    pub mode: SemanticScholarMode,
+
+    #[serde(default = "default_max_results")]
+    pub max_results: usize,
+
+    #[serde(default)]
+    pub min_citations: i32,
+
+    pub api_key: Option<String>,
 
     #[serde(default = "default_rate_limit_delay_ms")]
     pub rate_limit_delay_ms: u64,
@@ -100,6 +131,10 @@ fn default_user_agent() -> String {
 
 fn default_rate_limit_delay_ms() -> u64 {
     1000
+}
+
+fn default_max_results() -> usize {
+    100
 }
 
 impl Config {
@@ -157,6 +192,9 @@ impl Config {
             match &source.config {
                 SourceConfig::Reddit(reddit_config) => {
                     self.validate_reddit_config(reddit_config, idx)?;
+                }
+                SourceConfig::SemanticScholar(semantic_scholar_config) => {
+                    self.validate_semantic_scholar_config(semantic_scholar_config, idx)?;
                 }
             }
         }
@@ -221,6 +259,99 @@ impl Config {
                 "sources[{}]: user_agent cannot be empty (required by Reddit API)",
                 idx
             );
+        }
+
+        Ok(())
+    }
+
+    fn validate_semantic_scholar_config(
+        &self,
+        config: &SemanticScholarConfig,
+        idx: usize,
+    ) -> Result<()> {
+        // Validate max_results
+        if config.max_results == 0 {
+            bail!("sources[{}]: max_results must be greater than 0", idx);
+        }
+
+        // Validate min_citations (must be non-negative)
+        if config.min_citations < 0 {
+            bail!(
+                "sources[{}]: min_citations must be non-negative, got: {}",
+                idx,
+                config.min_citations
+            );
+        }
+
+        // Validate year format if provided in search mode
+        match &config.mode {
+            SemanticScholarMode::Search { query, year } => {
+                if query.is_empty() {
+                    bail!("sources[{}]: query cannot be empty in search mode", idx);
+                }
+
+                // Validate year format if provided
+                if let Some(year_str) = year {
+                    self.validate_year_format(year_str, idx)?;
+                }
+            }
+            SemanticScholarMode::Recommendations { paper_id } => {
+                if paper_id.is_empty() {
+                    bail!(
+                        "sources[{}]: paper_id cannot be empty in recommendations mode",
+                        idx
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_year_format(&self, year: &str, idx: usize) -> Result<()> {
+        // Valid formats: "2020", "2020-2024", "2020-", "-2024"
+        if year.is_empty() {
+            bail!("sources[{}]: year cannot be empty", idx);
+        }
+
+        if year.contains('-') {
+            let parts: Vec<&str> = year.split('-').collect();
+            if parts.len() != 2 {
+                bail!(
+                    "sources[{}]: invalid year range format '{}', expected 'YYYY-YYYY', 'YYYY-', or '-YYYY'",
+                    idx,
+                    year
+                );
+            }
+
+            // Validate start year if provided
+            if !parts[0].is_empty() && parts[0].parse::<i32>().is_err() {
+                bail!(
+                    "sources[{}]: invalid start year '{}' in range '{}'",
+                    idx,
+                    parts[0],
+                    year
+                );
+            }
+
+            // Validate end year if provided
+            if !parts[1].is_empty() && parts[1].parse::<i32>().is_err() {
+                bail!(
+                    "sources[{}]: invalid end year '{}' in range '{}'",
+                    idx,
+                    parts[1],
+                    year
+                );
+            }
+        } else {
+            // Single year
+            if year.parse::<i32>().is_err() {
+                bail!(
+                    "sources[{}]: invalid year '{}', must be a valid integer",
+                    idx,
+                    year
+                );
+            }
         }
 
         Ok(())
@@ -361,6 +492,69 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("user_agent cannot be empty"));
+    }
+
+    #[test]
+    fn test_semantic_scholar_search_config() {
+        let toml = r#"
+            [crawler]
+            user_agent = "test-crawler/1.0"
+
+            [[sources]]
+            type = "semanticscholar"
+            enabled = true
+            mode = "search"
+            query = "machine learning"
+            year = "2020-2024"
+            max_results = 50
+            min_citations = 10
+            rate_limit_delay_ms = 1000
+        "#;
+
+        let config = Config::from_str(toml).unwrap();
+        assert_eq!(config.sources.len(), 1);
+
+        match &config.sources[0].config {
+            SourceConfig::SemanticScholar(s2) => {
+                assert_eq!(s2.max_results, 50);
+                assert_eq!(s2.min_citations, 10);
+                match &s2.mode {
+                    SemanticScholarMode::Search { query, year } => {
+                        assert_eq!(query, "machine learning");
+                        assert_eq!(year.as_deref(), Some("2020-2024"));
+                    }
+                    _ => panic!("Expected Search mode"),
+                }
+            }
+            _ => panic!("Expected SemanticScholar config"),
+        }
+    }
+
+    #[test]
+    fn test_semantic_scholar_recommendations_config() {
+        let toml = r#"
+            [crawler]
+            user_agent = "test-crawler/1.0"
+
+            [[sources]]
+            type = "semanticscholar"
+            enabled = true
+            mode = "recommendations"
+            paper_id = "abc123"
+            max_results = 20
+            min_citations = 5
+        "#;
+
+        let config = Config::from_str(toml).unwrap();
+        match &config.sources[0].config {
+            SourceConfig::SemanticScholar(s2) => match &s2.mode {
+                SemanticScholarMode::Recommendations { paper_id } => {
+                    assert_eq!(paper_id, "abc123");
+                }
+                _ => panic!("Expected Recommendations mode"),
+            },
+            _ => panic!("Expected SemanticScholar config"),
+        }
     }
 
     #[test]

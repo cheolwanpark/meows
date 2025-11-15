@@ -1,0 +1,50 @@
+{
+  "recommendedPapers": [
+    {
+      "paperId": "rec1234567890",
+      "title": "BERT: Pre-training of Deep Bidirectional Transformers",
+      "abstract": "We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers.",
+      "year": 2019,
+      "citationCount": 87654,
+      "url": "https://www.semanticscholar.org/paper/rec1234567890",
+      "authors": [
+        {
+          "authorId": "1234567",
+          "name": "Jacob Devlin"
+        },
+        {
+          "authorId": "7654321",
+          "name": "Ming-Wei Chang"
+        }
+      ]
+    },
+    {
+      "paperId": "rec0987654321",
+      "title": "GPT-3: Language Models are Few-Shot Learners",
+      "abstract": "We demonstrate that scaling up language models greatly improves task-agnostic, few-shot performance.",
+      "year": 2020,
+      "citationCount": 45678,
+      "url": "https://www.semanticscholar.org/paper/rec0987654321",
+      "authors": [
+        {
+          "authorId": "9876543",
+          "name": "Tom B. Brown"
+        }
+      ]
+    },
+    {
+      "paperId": "rec111222333",
+      "title": "Low Citation Paper",
+      "abstract": "This is a paper with low citations for testing min_citations filter.",
+      "year": 2024,
+      "citationCount": 3,
+      "url": "https://www.semanticscholar.org/paper/rec111222333",
+      "authors": [
+        {
+          "authorId": "111222",
+          "name": "Test Author"
+        }
+      ]
+    }
+  ]
+}

@@ -83,15 +83,19 @@ async fn main() -> Result<()> {
         .into_iter()
         .filter(|entry| entry.enabled)
         .map(|entry| {
-            eprintln!(
-                "Enabling source: {} ({})",
-                match &entry.config {
-                    config::SourceConfig::Reddit(r) => &r.subreddit,
-                },
-                match &entry.config {
-                    config::SourceConfig::Reddit(r) => &r.sort_by,
+            let (source_name, source_detail) = match &entry.config {
+                config::SourceConfig::Reddit(r) => {
+                    (r.subreddit.as_str(), r.sort_by.as_str())
                 }
-            );
+                config::SourceConfig::SemanticScholar(s) => {
+                    let detail = match &s.mode {
+                        config::SemanticScholarMode::Search { query, .. } => query.as_str(),
+                        config::SemanticScholarMode::Recommendations { paper_id } => paper_id.as_str(),
+                    };
+                    ("semantic_scholar", detail)
+                }
+            };
+            eprintln!("Enabling source: {} ({})", source_name, source_detail);
             build_source(entry.config, client.clone())
         })
         .collect::<Result<Vec<_>>>()
