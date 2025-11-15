@@ -1,5 +1,7 @@
 package layouts
 
+import "github.com/cheolwanpark/meows/front/templates/components"
+
 templ Base(title string, csrfToken string, content templ.Component) {
 	<!DOCTYPE html>
 	<html lang="en" class="h-full">
@@ -33,10 +35,39 @@ templ Base(title string, csrfToken string, content templ.Component) {
 						const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 						evt.detail.headers['X-CSRF-Token'] = token;
 					});
+
+					// Global htmx error handlers - dispatch custom events for toast notifications
+					document.body.addEventListener('htmx:responseError', function(evt) {
+						const message = evt.detail.xhr.statusText || 'An error occurred while processing your request';
+						window.dispatchEvent(new CustomEvent('show-error', { detail: message }));
+					});
+
+					document.body.addEventListener('htmx:sendError', function(evt) {
+						window.dispatchEvent(new CustomEvent('show-error', {
+							detail: 'Network error: Unable to reach the server'
+						}));
+					});
+
+					document.body.addEventListener('htmx:timeout', function(evt) {
+						window.dispatchEvent(new CustomEvent('show-error', {
+							detail: 'Request timed out. Please try again.'
+						}));
+					});
 				});
+			</script>
+			<script>
+				// Initialize dark mode from localStorage before page renders (prevents FOUC)
+				(function() {
+					const theme = localStorage.getItem('theme') ||
+						(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+					if (theme === 'dark') {
+						document.documentElement.classList.add('dark');
+					}
+				})();
 			</script>
 		</head>
 		<body class="h-full bg-background text-foreground">
+			@components.ToastContainer()
 			@Header()
 			<main class="container mx-auto px-4 py-8 max-w-4xl">
 				@content

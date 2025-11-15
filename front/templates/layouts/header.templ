@@ -20,7 +20,7 @@ templ Header() {
 				<button
 					x-data="{ dark: false }"
 					x-init="dark = document.documentElement.classList.contains('dark')"
-					@click="dark = !dark; document.documentElement.classList.toggle('dark')"
+					@click="dark = !dark; document.documentElement.classList.toggle('dark'); localStorage.setItem('theme', dark ? 'dark' : 'light')"
 					class="text-sm font-medium hover:text-brand transition-colors"
 					title="Toggle dark mode"
 				>

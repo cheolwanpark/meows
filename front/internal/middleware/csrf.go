@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
-	"sync"
 )
 
 const (
@@ -18,15 +17,11 @@ const (
 
 // CSRF provides CSRF protection middleware
 type CSRF struct {
-	key    string
-	tokens sync.Map // session ID -> token
 }
 
 // NewCSRF creates a new CSRF middleware
-func NewCSRF(key string) *CSRF {
-	return &CSRF{
-		key: key,
-	}
+func NewCSRF() *CSRF {
+	return &CSRF{}
 }
 
 // GetToken returns the CSRF token for the current request/session
@@ -42,9 +37,9 @@ func (c *CSRF) GetToken(r *http.Request) string {
 }
 
 // SetToken sets the CSRF token as a cookie
-func (c *CSRF) SetToken(w http.ResponseWriter, token string) {
-	// Always use Secure cookies to prevent token interception
-	// In local dev without HTTPS, browsers will still accept them
+func (c *CSRF) SetToken(w http.ResponseWriter, r *http.Request, token string) {
+	// Use Secure flag only for HTTPS to prevent cookie rejection over HTTP
+	// In production with TLS, this protects against token interception
 	http.SetCookie(w, &http.Cookie{
 		Name:     csrfCookieName,
 		Value:    token,
@@ -52,7 +47,7 @@ func (c *CSRF) SetToken(w http.ResponseWriter, token string) {
 		MaxAge:   24 * 3600, // 24 hours
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   true, // Always secure to prevent interception
+		Secure:   r.TLS != nil, // Only set Secure if using HTTPS
 	})
 }
 

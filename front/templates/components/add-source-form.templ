@@ -7,6 +7,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 		hx-post="/config/sources"
 		hx-target="#source-list"
 		hx-swap="afterbegin"
+		hx-indicator=".htmx-indicator"
 		class="space-y-5 p-6 border rounded-lg bg-card"
 		x-data="{ sourceType: 'reddit', mode: 'search', sort: 'hot', showAdvanced: false, showCredentials: false }"
 	>

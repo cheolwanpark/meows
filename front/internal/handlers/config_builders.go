@@ -43,21 +43,21 @@ func buildRedditConfig(r *http.Request) (map[string]interface{}, error) {
 	}
 
 	// Required: limit (with default and bounds)
-	limit, err := parseIntWithBounds(r.FormValue("limit"), 25, 1, 100, "limit")
+	limit, err := parseIntWithBounds(r.FormValue("limit"), RedditDefaultLimit, RedditMinLimit, RedditMaxLimit, "limit")
 	if err != nil {
 		return nil, err
 	}
 	config["limit"] = limit
 
 	// Required: min_score (with default and bounds)
-	minScore, err := parseIntWithBounds(r.FormValue("min_score"), 10, 0, 10000, "min_score")
+	minScore, err := parseIntWithBounds(r.FormValue("min_score"), RedditDefaultMinScore, RedditMinMinScore, RedditMaxMinScore, "min_score")
 	if err != nil {
 		return nil, err
 	}
 	config["min_score"] = minScore
 
 	// Required: min_comments (with default and bounds)
-	minComments, err := parseIntWithBounds(r.FormValue("min_comments"), 5, 0, 1000, "min_comments")
+	minComments, err := parseIntWithBounds(r.FormValue("min_comments"), RedditDefaultMinComments, RedditMinMinComments, RedditMaxMinComments, "min_comments")
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func buildRedditConfig(r *http.Request) (map[string]interface{}, error) {
 	config["user_agent"] = userAgent
 
 	// Required: rate_limit_delay_ms (with default and bounds)
-	rateLimitDelay, err := parseIntWithBounds(r.FormValue("rate_limit_delay_ms"), 2000, 100, 60000, "rate_limit_delay_ms")
+	rateLimitDelay, err := parseIntWithBounds(r.FormValue("rate_limit_delay_ms"), RedditDefaultRateLimitDelay, RedditMinRateLimitDelay, RedditMaxRateLimitDelay, "rate_limit_delay_ms")
 	if err != nil {
 		return nil, err
 	}
@@ -142,21 +142,21 @@ func buildSemanticScholarConfig(r *http.Request) (map[string]interface{}, error)
 	}
 
 	// Required: max_results (with default and bounds)
-	maxResults, err := parseIntWithBounds(r.FormValue("max_results"), 25, 1, 100, "max_results")
+	maxResults, err := parseIntWithBounds(r.FormValue("max_results"), S2DefaultMaxResults, S2MinMaxResults, S2MaxMaxResults, "max_results")
 	if err != nil {
 		return nil, err
 	}
 	config["max_results"] = maxResults
 
 	// Required: min_citations (with default and bounds)
-	minCitations, err := parseIntWithBounds(r.FormValue("min_citations"), 10, 0, 100000, "min_citations")
+	minCitations, err := parseIntWithBounds(r.FormValue("min_citations"), S2DefaultMinCitations, S2MinMinCitations, S2MaxMinCitations, "min_citations")
 	if err != nil {
 		return nil, err
 	}
 	config["min_citations"] = minCitations
 
 	// Required: rate_limit_delay_ms (with default and bounds)
-	rateLimitDelay, err := parseIntWithBounds(r.FormValue("rate_limit_delay_ms"), 1000, 100, 60000, "rate_limit_delay_ms")
+	rateLimitDelay, err := parseIntWithBounds(r.FormValue("rate_limit_delay_ms"), S2DefaultRateLimitDelay, S2MinRateLimitDelay, S2MaxRateLimitDelay, "rate_limit_delay_ms")
 	if err != nil {
 		return nil, err
 	}

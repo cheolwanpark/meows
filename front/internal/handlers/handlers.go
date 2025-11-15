@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/cheolwanpark/meows/front/internal/collector"
 	"github.com/cheolwanpark/meows/front/internal/middleware"
@@ -31,17 +30,36 @@ func NewHandler(collectorClient *collector.Client, csrf *middleware.CSRF) *Handl
 	}
 }
 
+// respondWithError handles errors by logging technical details and sending user-friendly messages
+// For htmx requests, it sends an HX-Trigger header to show a toast notification
+func respondWithError(w http.ResponseWriter, userMsg string, logMsg string, err error, status int) {
+	// Log technical error with context
+	if err != nil {
+		slog.Error(logMsg, "error", err, "status", status)
+	} else {
+		slog.Warn(logMsg, "status", status)
+	}
+
+	// Set HX-Trigger header for toast notification (properly encoded to prevent injection)
+	trigger := map[string]string{"show-error": userMsg}
+	triggerJSON, _ := json.Marshal(trigger)
+	w.Header().Set("HX-Trigger", string(triggerJSON))
+
+	// Write HTTP status and generic error response
+	http.Error(w, userMsg, status)
+}
+
 // Home renders the home page with articles
 func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
 	defer cancel()
 
 	// Get CSRF token
 	csrfToken := h.csrf.GetToken(r)
-	h.csrf.SetToken(w, csrfToken)
+	h.csrf.SetToken(w, r, csrfToken)
 
 	// Fetch articles from collector
-	collectorArticles, err := h.collector.GetArticles(ctx, 50, 0)
+	collectorArticles, err := h.collector.GetArticles(ctx, DefaultArticleLimit, DefaultArticleOffset)
 	if err != nil {
 		slog.Error("Failed to fetch articles", "error", err)
 		// Render error page with proper HTTP status
@@ -86,12 +104,12 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 
 // ConfigPage renders the source management page
 func (h *Handler) ConfigPage(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
 	defer cancel()
 
 	// Get CSRF token
 	csrfToken := h.csrf.GetToken(r)
-	h.csrf.SetToken(w, csrfToken)
+	h.csrf.SetToken(w, r, csrfToken)
 
 	// Fetch sources from collector
 	collectorSources, err := h.collector.GetSources(ctx)
@@ -120,12 +138,12 @@ func (h *Handler) ConfigPage(w http.ResponseWriter, r *http.Request) {
 
 // CreateSource handles source creation (htmx endpoint)
 func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
 	defer cancel()
 
 	// Parse form
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		respondWithError(w, "Invalid form data. Please check your input and try again.", "Failed to parse form", err, http.StatusBadRequest)
 		return
 	}
 
@@ -232,19 +250,18 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 
 // DeleteSource handles source deletion (htmx endpoint)
 func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
 	defer cancel()
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		http.Error(w, "Missing source ID", http.StatusBadRequest)
+		respondWithError(w, "Source ID is missing", "Missing source ID in request", nil, http.StatusBadRequest)
 		return
 	}
 
 	// Delete source via collector
 	if err := h.collector.DeleteSource(ctx, id); err != nil {
-		slog.Error("Failed to delete source", "id", id, "error", err)
-		http.Error(w, "Failed to delete source", http.StatusInternalServerError)
+		respondWithError(w, "Failed to delete source. Please try again.", "Failed to delete source", err, http.StatusInternalServerError)
 		return
 	}
 

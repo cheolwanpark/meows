@@ -45,23 +45,6 @@ templ SourceCard(source models.Source, csrfToken string) {
 
 		<div class="flex items-center gap-2 ml-4">
 			<button
-				x-data="{ isActive: true }"
-				@click="isActive = !isActive"
-				class="p-2 hover:bg-muted rounded-md transition-colors text-lg"
-				title={ func() string {
-					if source.IsActive {
-						return "Deactivate"
-					}
-					return "Activate"
-				}() }
-			>
-				if source.IsActive {
-					⏸️
-				} else {
-					▶️
-				}
-			</button>
-			<button
 				hx-delete={ fmt.Sprintf("/config/sources/%s", source.ID) }
 				hx-confirm="Are you sure you want to remove this source? 😿"
 				hx-target={ fmt.Sprintf("#source-%s", source.ID) }

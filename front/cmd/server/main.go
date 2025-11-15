@@ -32,7 +32,7 @@ func main() {
 	collectorClient := collector.NewClient(cfg.CollectorURL, 10*time.Second)
 
 	// Initialize CSRF middleware
-	csrfMiddleware := middleware.NewCSRF(cfg.CSRFKey)
+	csrfMiddleware := middleware.NewCSRF()
 
 	// Initialize handlers
 	h := handlers.NewHandler(collectorClient, csrfMiddleware)
@@ -100,7 +100,6 @@ func main() {
 type Config struct {
 	Port         string
 	CollectorURL string
-	CSRFKey      string
 	Environment  string
 }
 
@@ -109,7 +108,6 @@ func loadConfig() Config {
 	return Config{
 		Port:         getEnv("PORT", "3000"),
 		CollectorURL: getEnv("COLLECTOR_URL", "http://localhost:8080"),
-		CSRFKey:      getEnv("CSRF_KEY", "change-me-in-production-please-use-random-key"),
 		Environment:  getEnv("ENV", "development"),
 	}
 }
