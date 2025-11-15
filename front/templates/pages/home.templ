@@ -1,0 +1,36 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/cheolwanpark/meows/front/templates/layouts"
+	"github.com/cheolwanpark/meows/front/templates/components"
+	"github.com/cheolwanpark/meows/front/internal/models"
+)
+
+templ HomePage(articles []models.Article, csrfToken string) {
+	@layouts.Base("Home", csrfToken, homePageContent(articles))
+}
+
+templ homePageContent(articles []models.Article) {
+	<div class="space-y-6">
+		<div class="flex items-center justify-between">
+			<h1 class="text-3xl font-serif font-bold">Latest News</h1>
+			<span class="text-sm text-muted-foreground">
+				{ fmt.Sprintf("%d articles", len(articles)) }
+			</span>
+		</div>
+
+		if len(articles) == 0 {
+			@components.EmptyState(
+				"No articles yet",
+				"Articles from your configured sources will appear here. Add sources in the Sources page to get started!",
+			)
+		} else {
+			<div class="space-y-1 border rounded-lg overflow-hidden bg-card">
+				for i, article := range articles {
+					@components.NewsItem(article, i+1)
+				}
+			</div>
+		}
+	</div>
+}

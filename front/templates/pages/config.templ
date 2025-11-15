@@ -1,0 +1,42 @@
+package pages
+
+import (
+	"github.com/cheolwanpark/meows/front/templates/layouts"
+	"github.com/cheolwanpark/meows/front/templates/components"
+	"github.com/cheolwanpark/meows/front/internal/models"
+)
+
+templ ConfigPage(sources []models.Source, csrfToken string, errors models.FormErrors) {
+	@layouts.Base("Sources", csrfToken, configPageContent(sources, csrfToken, errors))
+}
+
+templ configPageContent(sources []models.Source, csrfToken string, errors models.FormErrors) {
+	<div class="space-y-8">
+		<div>
+			<h1 class="text-3xl font-serif font-bold mb-2">Manage Sources</h1>
+			<p class="text-muted-foreground">
+				Add and manage your news sources. Currently only Reddit sources are supported.
+			</p>
+		</div>
+
+		<!-- Add Source Form -->
+		@components.AddSourceForm(csrfToken, errors, map[string]string{})
+
+		<!-- Sources List -->
+		<div>
+			<h2 class="text-2xl font-serif font-bold mb-4">Your Sources</h2>
+			@components.SourceList(sources, csrfToken)
+		</div>
+
+		<!-- Help Section -->
+		<div class="p-6 border rounded-lg bg-muted/30">
+			<h3 class="text-lg font-serif font-bold mb-3">📚 How it works</h3>
+			<ul class="space-y-2 text-sm text-muted-foreground">
+				<li>• Add Reddit sources by entering a subreddit name (e.g., "programming")</li>
+				<li>• Set a cron schedule to control how often articles are fetched</li>
+				<li>• Articles will appear on the home page once the source is crawled</li>
+				<li>• Toggle sources on/off or delete them using the buttons on each source card</li>
+			</ul>
+		</div>
+	</div>
+}

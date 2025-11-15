@@ -1,0 +1,14 @@
+{
+  "name": "meows-front",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:css": "tailwindcss -i ./static/css/input.css -o ./static/css/output.css --watch",
+    "build:css": "tailwindcss -i ./static/css/input.css -o ./static/css/output.css --minify"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.17"
+  }
+}

@@ -1,0 +1,76 @@
+package components
+
+import (
+	"fmt"
+	"github.com/cheolwanpark/meows/front/internal/models"
+)
+
+templ SourceCard(source models.Source, csrfToken string) {
+	<div
+		id={ fmt.Sprintf("source-%s", source.ID) }
+		class={ templ.KV("flex items-center justify-between p-4 rounded-lg border transition-all source-card",true),
+			templ.KV("bg-background border-border", source.IsActive),
+			templ.KV("bg-muted/30 border-border opacity-60", !source.IsActive) }
+	>
+		<div class="flex items-center gap-3 flex-1 min-w-0">
+			<span class="text-2xl">{ source.CategoryEmoji }</span>
+			<div class="flex-1 min-w-0">
+				<h3 class="font-medium text-foreground truncate">
+					{ source.Name }
+				</h3>
+				<p class="text-xs text-muted-foreground truncate">
+					{ source.URL }
+				</p>
+				if source.LastRunAgo != "" {
+					<p class="text-xs text-muted-foreground mt-1">
+						Last run: { source.LastRunAgo }
+					</p>
+				}
+				if source.LastError != "" {
+					<p class="text-xs text-destructive mt-1 truncate">
+						Error: { source.LastError }
+					</p>
+				}
+			</div>
+			<span class={ templ.KV("text-xs px-2 py-1 rounded-full", true),
+				templ.KV("bg-[#ff6b35]/10 text-[#ff6b35]", source.IsActive),
+				templ.KV("bg-muted text-muted-foreground", !source.IsActive) }>
+				if source.IsActive {
+					Active
+				} else {
+					Inactive
+				}
+			</span>
+		</div>
+
+		<div class="flex items-center gap-2 ml-4">
+			<button
+				x-data="{ isActive: true }"
+				@click="isActive = !isActive"
+				class="p-2 hover:bg-muted rounded-md transition-colors text-lg"
+				title={ func() string {
+					if source.IsActive {
+						return "Deactivate"
+					}
+					return "Activate"
+				}() }
+			>
+				if source.IsActive {
+					⏸️
+				} else {
+					▶️
+				}
+			</button>
+			<button
+				hx-delete={ fmt.Sprintf("/config/sources/%s", source.ID) }
+				hx-confirm="Are you sure you want to remove this source? 😿"
+				hx-target={ fmt.Sprintf("#source-%s", source.ID) }
+				hx-swap="delete"
+				class="p-2 hover:bg-destructive/10 hover:text-destructive rounded-md transition-colors text-lg"
+				title="Delete source"
+			>
+				🗑️
+			</button>
+		</div>
+	</div>
+}

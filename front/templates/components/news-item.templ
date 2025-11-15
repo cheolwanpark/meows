@@ -1,0 +1,60 @@
+package components
+
+import (
+	"fmt"
+	"github.com/cheolwanpark/meows/front/internal/models"
+)
+
+templ NewsItem(article models.Article, index int) {
+	<article class="flex gap-3 py-3 px-2 hover:bg-muted/50 rounded-lg transition-colors">
+		<!-- Index number -->
+		<div class="text-muted-foreground text-sm font-mono w-6 flex-shrink-0 pt-1">
+			{ fmt.Sprintf("%d.", index) }
+		</div>
+
+		<!-- Content -->
+		<div class="flex-1 min-w-0">
+			<!-- Title and domain -->
+			<div class="flex flex-wrap items-baseline gap-2 mb-1">
+				if article.URL != "" {
+					<a
+						href={ templ.SafeURL(article.URL) }
+						target="_blank"
+						rel="noopener noreferrer"
+						class="text-foreground hover:text-[#ff6b35] transition-colors font-medium text-base leading-snug"
+					>
+						{ article.Title }
+					</a>
+					if article.Domain != "" {
+						<span class="text-muted-foreground text-xs">
+							({ article.Domain })
+						</span>
+					}
+				} else {
+					<span class="text-foreground font-medium text-base leading-snug">
+						{ article.Title }
+					</span>
+				}
+			</div>
+
+			<!-- Metadata -->
+			<div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+				<span class="flex items-center gap-1">
+					<span class="text-sm">🐾</span>
+					{ fmt.Sprintf("%d points", article.Score) }
+				</span>
+				<span>by { article.Author }</span>
+				<span>{ article.TimeAgo }</span>
+				if article.Source == "reddit" {
+					<span class="flex items-center gap-1">
+						<span class="text-sm">💬</span>
+						{ fmt.Sprintf("%d comments", article.Comments) }
+					</span>
+				}
+				<span class="text-[#ff6b35] font-medium">
+					{ article.Source }
+				</span>
+			</div>
+		</div>
+	</article>
+}

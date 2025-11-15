@@ -1,0 +1,33 @@
+package layouts
+
+templ Header() {
+	<header class="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+		<div class="container mx-auto px-4 flex h-16 items-center justify-between max-w-4xl">
+			<div class="flex items-center gap-2">
+				<a href="/" class="flex items-center gap-2 font-serif font-bold text-xl hover:opacity-80 transition-opacity">
+					<span class="text-2xl">🐾</span>
+					<span>Meows</span>
+				</a>
+			</div>
+
+			<nav class="flex items-center gap-6">
+				<a href="/" class="text-sm font-medium hover:text-brand transition-colors">
+					Home
+				</a>
+				<a href="/config" class="text-sm font-medium hover:text-brand transition-colors">
+					Sources
+				</a>
+				<button
+					x-data="{ dark: false }"
+					x-init="dark = document.documentElement.classList.contains('dark')"
+					@click="dark = !dark; document.documentElement.classList.toggle('dark')"
+					class="text-sm font-medium hover:text-brand transition-colors"
+					title="Toggle dark mode"
+				>
+					<span x-show="!dark">🌙</span>
+					<span x-show="dark">☀️</span>
+				</button>
+			</nav>
+		</div>
+	</header>
+}

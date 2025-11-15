@@ -1,0 +1,47 @@
+package layouts
+
+templ Base(title string, csrfToken string, content templ.Component) {
+	<!DOCTYPE html>
+	<html lang="en" class="h-full">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="csrf-token" content={ csrfToken }/>
+			<title>{ title } - Meows</title>
+
+			<!-- Favicon -->
+			<link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml"/>
+			<link rel="icon" href="/static/icons/icon-light-32x32.png" type="image/png" media="(prefers-color-scheme: light)"/>
+			<link rel="icon" href="/static/icons/icon-dark-32x32.png" type="image/png" media="(prefers-color-scheme: dark)"/>
+			<link rel="apple-touch-icon" href="/static/icons/apple-icon.png"/>
+
+			<!-- Fonts -->
+			<link rel="preconnect" href="https://fonts.googleapis.com"/>
+			<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+			<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap" rel="stylesheet"/>
+
+			<!-- Styles -->
+			<link rel="stylesheet" href="/static/css/output.css"/>
+
+			<!-- Scripts -->
+			<script src="/static/js/htmx.min.js" defer></script>
+			<script src="/static/js/alpine.min.js" defer></script>
+			<script>
+				// Configure htmx to use CSRF token from meta tag
+				document.addEventListener('DOMContentLoaded', function() {
+					document.body.addEventListener('htmx:configRequest', function(evt) {
+						const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+						evt.detail.headers['X-CSRF-Token'] = token;
+					});
+				});
+			</script>
+		</head>
+		<body class="h-full bg-background text-foreground">
+			@Header()
+			<main class="container mx-auto px-4 py-8 max-w-4xl">
+				@content
+			</main>
+			@Footer()
+		</body>
+	</html>
+}

@@ -1,0 +1,84 @@
+package components
+
+import "github.com/cheolwanpark/meows/front/internal/models"
+
+templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[string]string) {
+	<form
+		hx-post="/config/sources"
+		hx-target="#source-list"
+		hx-swap="afterbegin"
+		class="space-y-4 p-6 border rounded-lg bg-card"
+	>
+		<input type="hidden" name="csrf_token" value={ csrfToken }/>
+
+		<h2 class="text-xl font-serif font-bold mb-4">Add New Source</h2>
+
+		<!-- Subreddit Name -->
+		<div>
+			<label for="subreddit" class="block text-sm font-medium text-foreground mb-1.5">
+				Subreddit Name
+			</label>
+			<input
+				type="text"
+				id="subreddit"
+				name="subreddit"
+				value={ values["subreddit"] }
+				placeholder="e.g., programming"
+				required
+				class={ templ.KV("w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent", true),
+					templ.KV("border-destructive", errors.Name != "") }
+			/>
+			if errors.Name != "" {
+				<p class="text-xs text-destructive mt-1">{ errors.Name }</p>
+			}
+		</div>
+
+		<!-- Cron Expression -->
+		<div>
+			<label for="cron" class="block text-sm font-medium text-foreground mb-1.5">
+				Schedule (Cron Expression)
+			</label>
+			<input
+				type="text"
+				id="cron"
+				name="cron"
+				value={ values["cron"] }
+				placeholder="0 */6 * * * (every 6 hours)"
+				required
+				class={ templ.KV("w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent", true),
+					templ.KV("border-destructive", errors.Cron != "") }
+			/>
+			if errors.Cron != "" {
+				<p class="text-xs text-destructive mt-1">{ errors.Cron }</p>
+			}
+			<p class="text-xs text-muted-foreground mt-1">
+				Examples: "0 */6 * * *" (every 6 hours), "0 0 * * *" (daily at midnight)
+			</p>
+		</div>
+
+		<!-- Category (auto-determined, display only) -->
+		<div>
+			<label class="block text-sm font-medium text-foreground mb-1.5">
+				Source Type
+			</label>
+			<div class="text-sm text-muted-foreground">
+				Reddit (category auto-detected from subreddit)
+			</div>
+		</div>
+
+		<!-- General error -->
+		if errors.General != "" {
+			<div class="text-sm text-destructive p-3 bg-destructive/10 rounded-md">
+				{ errors.General }
+			</div>
+		}
+
+		<button
+			type="submit"
+			class="w-full sm:w-auto px-6 py-2.5 bg-[#ff6b35] text-white font-medium rounded-md hover:bg-[#e55a2b] transition-colors focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:ring-offset-2"
+		>
+			<span>Add Source 🐾</span>
+			<span class="htmx-indicator ml-2">⏳</span>
+		</button>
+	</form>
+}

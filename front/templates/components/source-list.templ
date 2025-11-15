@@ -1,0 +1,19 @@
+package components
+
+import "github.com/cheolwanpark/meows/front/internal/models"
+
+templ SourceList(sources []models.Source, csrfToken string) {
+	<div id="source-list" class="space-y-3">
+		if len(sources) == 0 {
+			<div class="text-center py-12 text-muted-foreground">
+				<div class="text-4xl mb-3">😿</div>
+				<p>No sources configured yet.</p>
+				<p class="text-sm mt-1">Add your first source above to get started!</p>
+			</div>
+		} else {
+			for _, source := range sources {
+				@SourceCard(source, csrfToken)
+			}
+		}
+	</div>
+}
