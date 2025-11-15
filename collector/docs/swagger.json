@@ -1,0 +1,703 @@
+{
+    "schemes": [
+        "http"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "A Go-based web service for scheduled crawling and collecting articles from Reddit and Semantic Scholar\n\nFeatures:\n- Multi-source support (Reddit, Semantic Scholar)\n- Scheduled crawling with cron expressions\n- REST API for source and article management\n- Health monitoring and metrics\n\n**Security Notice:** This API currently has no authentication. Not recommended for production use without adding authentication.",
+        "title": "Meows Collector API",
+        "contact": {
+            "name": "Meows Project",
+            "email": "support@example.com"
+        },
+        "license": {
+            "name": "MIT"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/",
+    "paths": {
+        "/articles": {
+            "get": {
+                "description": "Get crawled articles with pagination and filtering",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "articles"
+                ],
+                "summary": "List articles",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by source ID (UUID)",
+                        "name": "source_id",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 500,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Max results per page (default: 50, max: 500)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Pagination offset (default: 0)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "2024-11-15T00:00:00Z",
+                        "description": "Filter articles written after this timestamp (RFC3339 format)",
+                        "name": "since",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_cheolwanpark_meows_collector_internal_db.Article"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Check the health status of the service (database and scheduler)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "Service is healthy",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_cheolwanpark_meows_collector_internal_db.HealthStatus"
+                        }
+                    },
+                    "503": {
+                        "description": "Service is unhealthy",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_cheolwanpark_meows_collector_internal_db.HealthStatus"
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics": {
+            "get": {
+                "description": "Get service metrics and statistics (sources, articles, errors)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Service metrics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_cheolwanpark_meows_collector_internal_db.Metrics"
+                        }
+                    },
+                    "500": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/schedule": {
+            "get": {
+                "description": "Returns all crawl jobs scheduled to run in the next 24 hours",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "schedule"
+                ],
+                "summary": "Get upcoming scheduled jobs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_cheolwanpark_meows_collector_internal_db.ScheduleEntry"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Scheduler error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/sources": {
+            "get": {
+                "description": "Get all configured crawling sources, optionally filtered by type",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sources"
+                ],
+                "summary": "List all sources",
+                "parameters": [
+                    {
+                        "enum": [
+                            "reddit",
+                            "semantic_scholar"
+                        ],
+                        "type": "string",
+                        "description": "Filter by source type",
+                        "name": "type",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.SourceResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Add a new source with cron schedule for Reddit or Semantic Scholar",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sources"
+                ],
+                "summary": "Create a new crawling source",
+                "parameters": [
+                    {
+                        "description": "Source configuration",
+                        "name": "source",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.CreateSourceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.SourceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body, type, cron expression, or config",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Source with this configuration already exists",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Database or scheduler error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/sources/{id}": {
+            "get": {
+                "description": "Retrieve a specific source by its UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sources"
+                ],
+                "summary": "Get a source by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Source ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.SourceResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Source not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update source configuration and/or cron schedule. Jobs are automatically rescheduled.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sources"
+                ],
+                "summary": "Update a source",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Source ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated source configuration",
+                        "name": "source",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.UpdateSourceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.SourceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body, config, or cron expression",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Source not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Database or scheduler error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove source by UUID. Cascades to delete associated articles and comments.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sources"
+                ],
+                "summary": "Delete a source by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Source ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Source deleted successfully"
+                    },
+                    "404": {
+                        "description": "Source not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/sources/{type}/{external_id}": {
+            "delete": {
+                "description": "Alternative deletion method using type and external identifier (subreddit name, query, or paper ID)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sources"
+                ],
+                "summary": "Delete a source by type and external ID",
+                "parameters": [
+                    {
+                        "enum": [
+                            "reddit",
+                            "semantic_scholar"
+                        ],
+                        "type": "string",
+                        "description": "Source type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "External identifier (URL-encode if contains special characters)",
+                        "name": "external_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Source deleted successfully"
+                    },
+                    "400": {
+                        "description": "Invalid type or external_id contains slashes",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Source not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_cheolwanpark_meows_collector_internal_db.Article": {
+            "description": "Crawled article from Reddit or Semantic Scholar",
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string",
+                    "example": "user123"
+                },
+                "content": {
+                    "type": "string",
+                    "example": "This is the article content..."
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2024-11-15T12:00:00Z"
+                },
+                "external_id": {
+                    "description": "Reddit post ID / S2 paper ID",
+                    "type": "string",
+                    "example": "abc123"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "metadata": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "source_id": {
+                    "type": "string",
+                    "example": "660e8400-e29b-41d4-a716-446655440001"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "Understanding Go Concurrency"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://reddit.com/r/golang/comments/abc123"
+                },
+                "written_at": {
+                    "type": "string",
+                    "example": "2024-11-15T08:00:00Z"
+                }
+            }
+        },
+        "github_com_cheolwanpark_meows_collector_internal_db.HealthStatus": {
+            "description": "Service health status",
+            "type": "object",
+            "properties": {
+                "database": {
+                    "type": "string",
+                    "example": "ok"
+                },
+                "scheduler": {
+                    "type": "string",
+                    "example": "ok"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "healthy",
+                        "unhealthy"
+                    ],
+                    "example": "healthy"
+                },
+                "timestamp": {
+                    "type": "string",
+                    "example": "2024-11-15T12:00:00Z"
+                }
+            }
+        },
+        "github_com_cheolwanpark_meows_collector_internal_db.Metrics": {
+            "description": "Service metrics and statistics",
+            "type": "object",
+            "properties": {
+                "articles_today": {
+                    "type": "integer",
+                    "example": 45
+                },
+                "last_crawl": {
+                    "type": "string",
+                    "example": "2024-11-15T12:00:00Z"
+                },
+                "sources_with_errors": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "timestamp": {
+                    "type": "string",
+                    "example": "2024-11-15T12:05:00Z"
+                },
+                "total_articles": {
+                    "type": "integer",
+                    "example": 1523
+                },
+                "total_sources": {
+                    "type": "integer",
+                    "example": 10
+                }
+            }
+        },
+        "github_com_cheolwanpark_meows_collector_internal_db.ScheduleEntry": {
+            "description": "Scheduled crawl job information",
+            "type": "object",
+            "properties": {
+                "last_run_at": {
+                    "type": "string",
+                    "example": "2024-11-15T12:00:00Z"
+                },
+                "next_run": {
+                    "type": "string",
+                    "example": "2024-11-15T18:00:00Z"
+                },
+                "source_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "source_type": {
+                    "type": "string",
+                    "enum": [
+                        "reddit",
+                        "semantic_scholar"
+                    ],
+                    "example": "reddit"
+                }
+            }
+        },
+        "internal_api.CreateSourceRequest": {
+            "description": "Request body for creating a new crawling source",
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "cron_expr": {
+                    "type": "string",
+                    "example": "0 */6 * * *"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "reddit",
+                        "semantic_scholar"
+                    ],
+                    "example": "reddit"
+                }
+            }
+        },
+        "internal_api.ErrorResponse": {
+            "description": "Standard error response format",
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "invalid request body"
+                }
+            }
+        },
+        "internal_api.SourceResponse": {
+            "description": "Source response with sanitized configuration (credentials omitted)",
+            "type": "object",
+            "properties": {
+                "config_summary": {
+                    "type": "string",
+                    "example": "subreddit: golang, sort: hot, limit: 100, oauth: yes"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2024-11-15T10:00:00Z"
+                },
+                "cron_expr": {
+                    "type": "string",
+                    "example": "0 */6 * * *"
+                },
+                "external_id": {
+                    "type": "string",
+                    "example": "golang"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "last_error": {
+                    "type": "string",
+                    "example": ""
+                },
+                "last_run_at": {
+                    "type": "string",
+                    "example": "2024-11-15T12:00:00Z"
+                },
+                "last_success_at": {
+                    "type": "string",
+                    "example": "2024-11-15T12:00:00Z"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "idle",
+                        "running"
+                    ],
+                    "example": "idle"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "reddit",
+                        "semantic_scholar"
+                    ],
+                    "example": "reddit"
+                }
+            }
+        },
+        "internal_api.UpdateSourceRequest": {
+            "description": "Request body for updating an existing source",
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "cron_expr": {
+                    "type": "string",
+                    "example": "0 */12 * * *"
+                }
+            }
+        }
+    }
+}

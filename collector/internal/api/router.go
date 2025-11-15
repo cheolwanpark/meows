@@ -2,11 +2,13 @@ package api
 
 import (
 	"net/http"
+	"os"
 
 	"github.com/cheolwanpark/meows/collector/internal/db"
 	"github.com/cheolwanpark/meows/collector/internal/scheduler"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 // SetupRouter creates and configures the HTTP router
@@ -35,6 +37,14 @@ func SetupRouter(database *db.DB, sched *scheduler.Scheduler) http.Handler {
 	r.Get("/articles", h.ListArticles)
 	r.Get("/health", h.Health)
 	r.Get("/metrics", h.Metrics)
+
+	// Swagger UI (environment-gated for development only)
+	// Access at http://localhost:8080/docs when ENABLE_SWAGGER=true
+	if os.Getenv("ENABLE_SWAGGER") == "true" {
+		r.Get("/docs/*", httpSwagger.Handler(
+			httpSwagger.URL("doc.json"), // Use the embedded swagger doc
+		))
+	}
 
 	// 404 handler
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {

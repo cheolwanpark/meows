@@ -1,0 +1,494 @@
+basePath: /
+definitions:
+  github_com_cheolwanpark_meows_collector_internal_db.Article:
+    description: Crawled article from Reddit or Semantic Scholar
+    properties:
+      author:
+        example: user123
+        type: string
+      content:
+        example: This is the article content...
+        type: string
+      created_at:
+        example: "2024-11-15T12:00:00Z"
+        type: string
+      external_id:
+        description: Reddit post ID / S2 paper ID
+        example: abc123
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      metadata:
+        items:
+          type: integer
+        type: array
+      source_id:
+        example: 660e8400-e29b-41d4-a716-446655440001
+        type: string
+      title:
+        example: Understanding Go Concurrency
+        type: string
+      url:
+        example: https://reddit.com/r/golang/comments/abc123
+        type: string
+      written_at:
+        example: "2024-11-15T08:00:00Z"
+        type: string
+    type: object
+  github_com_cheolwanpark_meows_collector_internal_db.HealthStatus:
+    description: Service health status
+    properties:
+      database:
+        example: ok
+        type: string
+      scheduler:
+        example: ok
+        type: string
+      status:
+        enum:
+        - healthy
+        - unhealthy
+        example: healthy
+        type: string
+      timestamp:
+        example: "2024-11-15T12:00:00Z"
+        type: string
+    type: object
+  github_com_cheolwanpark_meows_collector_internal_db.Metrics:
+    description: Service metrics and statistics
+    properties:
+      articles_today:
+        example: 45
+        type: integer
+      last_crawl:
+        example: "2024-11-15T12:00:00Z"
+        type: string
+      sources_with_errors:
+        example: 1
+        type: integer
+      timestamp:
+        example: "2024-11-15T12:05:00Z"
+        type: string
+      total_articles:
+        example: 1523
+        type: integer
+      total_sources:
+        example: 10
+        type: integer
+    type: object
+  github_com_cheolwanpark_meows_collector_internal_db.ScheduleEntry:
+    description: Scheduled crawl job information
+    properties:
+      last_run_at:
+        example: "2024-11-15T12:00:00Z"
+        type: string
+      next_run:
+        example: "2024-11-15T18:00:00Z"
+        type: string
+      source_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      source_type:
+        enum:
+        - reddit
+        - semantic_scholar
+        example: reddit
+        type: string
+    type: object
+  internal_api.CreateSourceRequest:
+    description: Request body for creating a new crawling source
+    properties:
+      config:
+        items:
+          type: integer
+        type: array
+      cron_expr:
+        example: 0 */6 * * *
+        type: string
+      type:
+        enum:
+        - reddit
+        - semantic_scholar
+        example: reddit
+        type: string
+    type: object
+  internal_api.ErrorResponse:
+    description: Standard error response format
+    properties:
+      error:
+        example: invalid request body
+        type: string
+    type: object
+  internal_api.SourceResponse:
+    description: Source response with sanitized configuration (credentials omitted)
+    properties:
+      config_summary:
+        example: 'subreddit: golang, sort: hot, limit: 100, oauth: yes'
+        type: string
+      created_at:
+        example: "2024-11-15T10:00:00Z"
+        type: string
+      cron_expr:
+        example: 0 */6 * * *
+        type: string
+      external_id:
+        example: golang
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      last_error:
+        example: ""
+        type: string
+      last_run_at:
+        example: "2024-11-15T12:00:00Z"
+        type: string
+      last_success_at:
+        example: "2024-11-15T12:00:00Z"
+        type: string
+      status:
+        enum:
+        - idle
+        - running
+        example: idle
+        type: string
+      type:
+        enum:
+        - reddit
+        - semantic_scholar
+        example: reddit
+        type: string
+    type: object
+  internal_api.UpdateSourceRequest:
+    description: Request body for updating an existing source
+    properties:
+      config:
+        items:
+          type: integer
+        type: array
+      cron_expr:
+        example: 0 */12 * * *
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@example.com
+    name: Meows Project
+  description: |-
+    A Go-based web service for scheduled crawling and collecting articles from Reddit and Semantic Scholar
+
+    Features:
+    - Multi-source support (Reddit, Semantic Scholar)
+    - Scheduled crawling with cron expressions
+    - REST API for source and article management
+    - Health monitoring and metrics
+
+    **Security Notice:** This API currently has no authentication. Not recommended for production use without adding authentication.
+  license:
+    name: MIT
+  title: Meows Collector API
+  version: "1.0"
+paths:
+  /articles:
+    get:
+      consumes:
+      - application/json
+      description: Get crawled articles with pagination and filtering
+      parameters:
+      - description: Filter by source ID (UUID)
+        in: query
+        name: source_id
+        type: string
+      - description: 'Max results per page (default: 50, max: 500)'
+        in: query
+        maximum: 500
+        minimum: 1
+        name: limit
+        type: integer
+      - description: 'Pagination offset (default: 0)'
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - description: Filter articles written after this timestamp (RFC3339 format)
+        example: "2024-11-15T00:00:00Z"
+        in: query
+        name: since
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_cheolwanpark_meows_collector_internal_db.Article'
+            type: array
+        "500":
+          description: Database error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      summary: List articles
+      tags:
+      - articles
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: Check the health status of the service (database and scheduler)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Service is healthy
+          schema:
+            $ref: '#/definitions/github_com_cheolwanpark_meows_collector_internal_db.HealthStatus'
+        "503":
+          description: Service is unhealthy
+          schema:
+            $ref: '#/definitions/github_com_cheolwanpark_meows_collector_internal_db.HealthStatus'
+      summary: Health check
+      tags:
+      - monitoring
+  /metrics:
+    get:
+      consumes:
+      - application/json
+      description: Get service metrics and statistics (sources, articles, errors)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_cheolwanpark_meows_collector_internal_db.Metrics'
+        "500":
+          description: Database error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      summary: Service metrics
+      tags:
+      - monitoring
+  /schedule:
+    get:
+      consumes:
+      - application/json
+      description: Returns all crawl jobs scheduled to run in the next 24 hours
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_cheolwanpark_meows_collector_internal_db.ScheduleEntry'
+            type: array
+        "500":
+          description: Scheduler error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      summary: Get upcoming scheduled jobs
+      tags:
+      - schedule
+  /sources:
+    get:
+      consumes:
+      - application/json
+      description: Get all configured crawling sources, optionally filtered by type
+      parameters:
+      - description: Filter by source type
+        enum:
+        - reddit
+        - semantic_scholar
+        in: query
+        name: type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.SourceResponse'
+            type: array
+        "500":
+          description: Database error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      summary: List all sources
+      tags:
+      - sources
+    post:
+      consumes:
+      - application/json
+      description: Add a new source with cron schedule for Reddit or Semantic Scholar
+      parameters:
+      - description: Source configuration
+        in: body
+        name: source
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateSourceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.SourceResponse'
+        "400":
+          description: Invalid request body, type, cron expression, or config
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Source with this configuration already exists
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Database or scheduler error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      summary: Create a new crawling source
+      tags:
+      - sources
+  /sources/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Remove source by UUID. Cascades to delete associated articles and
+        comments.
+      parameters:
+      - description: Source ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Source deleted successfully
+        "404":
+          description: Source not found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Database error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      summary: Delete a source by ID
+      tags:
+      - sources
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a specific source by its UUID
+      parameters:
+      - description: Source ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.SourceResponse'
+        "404":
+          description: Source not found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Database error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      summary: Get a source by ID
+      tags:
+      - sources
+    put:
+      consumes:
+      - application/json
+      description: Update source configuration and/or cron schedule. Jobs are automatically
+        rescheduled.
+      parameters:
+      - description: Source ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated source configuration
+        in: body
+        name: source
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdateSourceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.SourceResponse'
+        "400":
+          description: Invalid request body, config, or cron expression
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Source not found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Database or scheduler error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      summary: Update a source
+      tags:
+      - sources
+  /sources/{type}/{external_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Alternative deletion method using type and external identifier
+        (subreddit name, query, or paper ID)
+      parameters:
+      - description: Source type
+        enum:
+        - reddit
+        - semantic_scholar
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: External identifier (URL-encode if contains special characters)
+        in: path
+        name: external_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Source deleted successfully
+        "400":
+          description: Invalid type or external_id contains slashes
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Source not found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Database error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      summary: Delete a source by type and external ID
+      tags:
+      - sources
+schemes:
+- http
+swagger: "2.0"

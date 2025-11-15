@@ -30,7 +30,18 @@ func NewHandler(database *db.DB, sched *scheduler.Scheduler) *Handler {
 	}
 }
 
-// CreateSource handles POST /sources
+// CreateSource godoc
+// @Summary Create a new crawling source
+// @Description Add a new source with cron schedule for Reddit or Semantic Scholar
+// @Tags sources
+// @Accept json
+// @Produce json
+// @Param source body CreateSourceRequest true "Source configuration"
+// @Success 201 {object} SourceResponse
+// @Failure 400 {object} ErrorResponse "Invalid request body, type, cron expression, or config"
+// @Failure 409 {object} ErrorResponse "Source with this configuration already exists"
+// @Failure 500 {object} ErrorResponse "Database or scheduler error"
+// @Router /sources [post]
 func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Type     string          `json:"type"`
@@ -98,10 +109,19 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(source)
+	json.NewEncoder(w).Encode(toSourceResponse(source))
 }
 
-// ListSources handles GET /sources
+// ListSources godoc
+// @Summary List all sources
+// @Description Get all configured crawling sources, optionally filtered by type
+// @Tags sources
+// @Accept json
+// @Produce json
+// @Param type query string false "Filter by source type" Enums(reddit, semantic_scholar)
+// @Success 200 {array} SourceResponse
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /sources [get]
 func (h *Handler) ListSources(w http.ResponseWriter, r *http.Request) {
 	sourceType := r.URL.Query().Get("type")
 
@@ -122,7 +142,7 @@ func (h *Handler) ListSources(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	sources := []db.Source{}
+	sources := []SourceResponse{}
 	for rows.Next() {
 		var src db.Source
 		var lastRunAt, lastSuccessAt sql.NullTime
@@ -158,7 +178,7 @@ func (h *Handler) ListSources(w http.ResponseWriter, r *http.Request) {
 			src.LastError = lastError.String
 		}
 
-		sources = append(sources, src)
+		sources = append(sources, toSourceResponse(&src))
 	}
 
 	if err := rows.Err(); err != nil {
@@ -169,7 +189,17 @@ func (h *Handler) ListSources(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(sources)
 }
 
-// GetSource handles GET /sources/{id}
+// GetSource godoc
+// @Summary Get a source by ID
+// @Description Retrieve a specific source by its UUID
+// @Tags sources
+// @Accept json
+// @Produce json
+// @Param id path string true "Source ID (UUID)"
+// @Success 200 {object} SourceResponse
+// @Failure 404 {object} ErrorResponse "Source not found"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /sources/{id} [get]
 func (h *Handler) GetSource(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -215,10 +245,22 @@ func (h *Handler) GetSource(w http.ResponseWriter, r *http.Request) {
 		src.LastError = lastError.String
 	}
 
-	json.NewEncoder(w).Encode(src)
+	json.NewEncoder(w).Encode(toSourceResponse(&src))
 }
 
-// UpdateSource handles PUT /sources/{id}
+// UpdateSource godoc
+// @Summary Update a source
+// @Description Update source configuration and/or cron schedule. Jobs are automatically rescheduled.
+// @Tags sources
+// @Accept json
+// @Produce json
+// @Param id path string true "Source ID (UUID)"
+// @Param source body UpdateSourceRequest true "Updated source configuration"
+// @Success 200 {object} SourceResponse
+// @Failure 400 {object} ErrorResponse "Invalid request body, config, or cron expression"
+// @Failure 404 {object} ErrorResponse "Source not found"
+// @Failure 500 {object} ErrorResponse "Database or scheduler error"
+// @Router /sources/{id} [put]
 func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -234,8 +276,11 @@ func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch existing source
 	var src db.Source
-	err := h.db.QueryRow("SELECT id, type, config, cron_expr, external_id, status, created_at FROM sources WHERE id = ?", id).
-		Scan(&src.ID, &src.Type, &src.Config, &src.CronExpr, &src.ExternalID, &src.Status, &src.CreatedAt)
+	var lastRunAt, lastSuccessAt sql.NullTime
+	var lastError, externalID sql.NullString
+
+	err := h.db.QueryRow("SELECT id, type, config, cron_expr, external_id, last_run_at, last_success_at, last_error, status, created_at FROM sources WHERE id = ?", id).
+		Scan(&src.ID, &src.Type, &src.Config, &src.CronExpr, &externalID, &lastRunAt, &lastSuccessAt, &lastError, &src.Status, &src.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		respondError(w, http.StatusNotFound, "source not found")
@@ -244,6 +289,20 @@ func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to fetch source: %v", err))
 		return
+	}
+
+	// Handle nullable fields
+	if externalID.Valid {
+		src.ExternalID = externalID.String
+	}
+	if lastRunAt.Valid {
+		src.LastRunAt = &lastRunAt.Time
+	}
+	if lastSuccessAt.Valid {
+		src.LastSuccessAt = &lastSuccessAt.Time
+	}
+	if lastError.Valid {
+		src.LastError = lastError.String
 	}
 
 	// Update fields
@@ -282,10 +341,20 @@ func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(src)
+	json.NewEncoder(w).Encode(toSourceResponse(&src))
 }
 
-// DeleteSource handles DELETE /sources/{id}
+// DeleteSource godoc
+// @Summary Delete a source by ID
+// @Description Remove source by UUID. Cascades to delete associated articles and comments.
+// @Tags sources
+// @Accept json
+// @Produce json
+// @Param id path string true "Source ID (UUID)"
+// @Success 204 "Source deleted successfully"
+// @Failure 404 {object} ErrorResponse "Source not found"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /sources/{id} [delete]
 func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -308,7 +377,19 @@ func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// DeleteSourceByTypeAndExternalID handles DELETE /sources/{type}/{external_id}
+// DeleteSourceByTypeAndExternalID godoc
+// @Summary Delete a source by type and external ID
+// @Description Alternative deletion method using type and external identifier (subreddit name, query, or paper ID)
+// @Tags sources
+// @Accept json
+// @Produce json
+// @Param type path string true "Source type" Enums(reddit, semantic_scholar)
+// @Param external_id path string true "External identifier (URL-encode if contains special characters)"
+// @Success 204 "Source deleted successfully"
+// @Failure 400 {object} ErrorResponse "Invalid type or external_id contains slashes"
+// @Failure 404 {object} ErrorResponse "Source not found"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /sources/{type}/{external_id} [delete]
 func (h *Handler) DeleteSourceByTypeAndExternalID(w http.ResponseWriter, r *http.Request) {
 	sourceType := chi.URLParam(r, "type")
 	externalID := chi.URLParam(r, "external_id")
@@ -345,28 +426,36 @@ func (h *Handler) DeleteSourceByTypeAndExternalID(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Delete from database FIRST (cascade deletes articles and comments)
+	// Unregister from scheduler first (consistent with DeleteSource)
+	h.scheduler.UnregisterJob(sourceID)
+
+	// Delete from database (cascade deletes articles and comments)
 	result, err := h.db.Exec("DELETE FROM sources WHERE id = ?", sourceID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to delete source: %v", err))
 		return
 	}
 
-	// Check if source was actually deleted (race condition safety)
+	// Check if source was actually deleted
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		respondError(w, http.StatusNotFound, "source not found")
 		return
 	}
 
-	// Unregister from scheduler AFTER successful delete (idempotent, safe)
-	h.scheduler.UnregisterJob(sourceID)
-
 	// Return success
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GetSchedule handles GET /schedule
+// GetSchedule godoc
+// @Summary Get upcoming scheduled jobs
+// @Description Returns all crawl jobs scheduled to run in the next 24 hours
+// @Tags schedule
+// @Accept json
+// @Produce json
+// @Success 200 {array} db.ScheduleEntry
+// @Failure 500 {object} ErrorResponse "Scheduler error"
+// @Router /schedule [get]
 func (h *Handler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 	schedule, err := h.scheduler.GetSchedule(24 * time.Hour)
 	if err != nil {
@@ -377,7 +466,19 @@ func (h *Handler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(schedule)
 }
 
-// ListArticles handles GET /articles
+// ListArticles godoc
+// @Summary List articles
+// @Description Get crawled articles with pagination and filtering
+// @Tags articles
+// @Accept json
+// @Produce json
+// @Param source_id query string false "Filter by source ID (UUID)"
+// @Param limit query int false "Max results per page (default: 50, max: 500)" minimum(1) maximum(500)
+// @Param offset query int false "Pagination offset (default: 0)" minimum(0)
+// @Param since query string false "Filter articles written after this timestamp (RFC3339 format)" example(2024-11-15T00:00:00Z)
+// @Success 200 {array} db.Article
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /articles [get]
 func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.URL.Query().Get("source_id")
 	limitStr := r.URL.Query().Get("limit")
@@ -477,7 +578,15 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(articles)
 }
 
-// Health handles GET /health
+// Health godoc
+// @Summary Health check
+// @Description Check the health status of the service (database and scheduler)
+// @Tags monitoring
+// @Accept json
+// @Produce json
+// @Success 200 {object} db.HealthStatus "Service is healthy"
+// @Failure 503 {object} db.HealthStatus "Service is unhealthy"
+// @Router /health [get]
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	health := db.HealthStatus{
 		Timestamp: time.Now(),
@@ -501,7 +610,15 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(health)
 }
 
-// Metrics handles GET /metrics
+// Metrics godoc
+// @Summary Service metrics
+// @Description Get service metrics and statistics (sources, articles, errors)
+// @Tags monitoring
+// @Accept json
+// @Produce json
+// @Success 200 {object} db.Metrics
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /metrics [get]
 func (h *Handler) Metrics(w http.ResponseWriter, r *http.Request) {
 	metrics := db.Metrics{
 		Timestamp: time.Now().UTC(),
@@ -548,6 +665,7 @@ func (h *Handler) Metrics(w http.ResponseWriter, r *http.Request) {
 // Helper functions
 
 func respondError(w http.ResponseWriter, code int, message string) {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }

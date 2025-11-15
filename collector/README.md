@@ -66,6 +66,45 @@ Environment variables:
 | `PORT` | `8080` | HTTP server port |
 | `MAX_COMMENT_DEPTH` | `5` | Maximum Reddit comment depth to fetch |
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `ENABLE_SWAGGER` | - | Set to `true` to enable Swagger UI at `/docs` (development only) |
+
+## API Documentation
+
+The collector provides **interactive API documentation** via Swagger UI.
+
+### Accessing Swagger UI
+
+Enable Swagger UI by setting the `ENABLE_SWAGGER` environment variable:
+
+```bash
+# Start collector with Swagger UI enabled
+ENABLE_SWAGGER=true ./bin/collector
+```
+
+Then navigate to **http://localhost:8080/docs** in your browser.
+
+### Features
+
+- **Interactive API explorer**: Test all endpoints directly from your browser
+- **Complete request/response schemas**: See all parameters, types, and examples
+- **Try it out**: Execute real API calls with custom parameters
+- **Security-focused**: Credentials (OAuth tokens, API keys) are **not exposed** in responses
+
+### Security Note
+
+**Swagger UI is disabled by default** and should only be enabled in development environments. The API currently has no authentication, so exposing Swagger UI in production is not recommended.
+
+### Regenerating Documentation
+
+After modifying API handlers or models, regenerate Swagger docs:
+
+```bash
+# Install swag CLI if not already installed
+go install github.com/swaggo/swag/cmd/swag@latest
+
+# Regenerate documentation
+swag init -g cmd/server/main.go --parseDependency --parseInternal
+```
 
 ## API Reference
 
@@ -129,15 +168,17 @@ Add a new crawling source with cron schedule.
 **Response:** `201 Created`
 ```json
 {
-  "id": "uuid",
+  "id": "550e8400-e29b-41d4-a716-446655440000",
   "type": "reddit",
-  "config": {...},
+  "config_summary": "subreddit: golang, sort: hot, limit: 100, oauth: no",
   "cron_expr": "0 */6 * * *",
   "external_id": "golang",
   "status": "idle",
   "created_at": "2024-11-15T10:00:00Z"
 }
 ```
+
+**Note:** The API returns `config_summary` instead of the raw `config` object to prevent exposing sensitive credentials (OAuth tokens, API keys).
 
 #### List Sources
 

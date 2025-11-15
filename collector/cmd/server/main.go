@@ -10,12 +10,30 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/cheolwanpark/meows/collector/docs" // Swagger docs
 	"github.com/cheolwanpark/meows/collector/internal/api"
 	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
 	"github.com/cheolwanpark/meows/collector/internal/scheduler"
 )
 
+// @title Meows Collector API
+// @version 1.0
+// @description A Go-based web service for scheduled crawling and collecting articles from Reddit and Semantic Scholar
+// @description
+// @description Features:
+// @description - Multi-source support (Reddit, Semantic Scholar)
+// @description - Scheduled crawling with cron expressions
+// @description - REST API for source and article management
+// @description - Health monitoring and metrics
+// @description
+// @description **Security Notice:** This API currently has no authentication. Not recommended for production use without adding authentication.
+// @contact.name Meows Project
+// @contact.email support@example.com
+// @license.name MIT
+// @host localhost:8080
+// @BasePath /
+// @schemes http
 func main() {
 	// Load configuration
 	cfg, err := config.Load()
