@@ -40,12 +40,17 @@ templ NewsItem(article models.Article, index int) {
 			<!-- Metadata -->
 			<div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
 				<span class="flex items-center gap-1">
-					<span class="text-sm">🐾</span>
-					{ fmt.Sprintf("%d points", article.Score) }
+					if article.Source == "semantic_scholar" {
+						<span class="text-sm">📚</span>
+						{ fmt.Sprintf("%d citations", article.Score) }
+					} else {
+						<span class="text-sm">🐾</span>
+						{ fmt.Sprintf("%d points", article.Score) }
+					}
 				</span>
 				<span>by { article.Author }</span>
 				<span>{ article.TimeAgo }</span>
-				if article.Source == "reddit" {
+				if article.Source == "reddit" && article.Comments > 0 {
 					<span class="flex items-center gap-1">
 						<span class="text-sm">💬</span>
 						{ fmt.Sprintf("%d comments", article.Comments) }

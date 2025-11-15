@@ -2,22 +2,43 @@
 
 This document tracks known issues and limitations in the current implementation.
 
-## Critical Issues
+## Recently Resolved Issues
 
-### 1. Source Type Detection (TODO)
-**File:** `internal/handlers/handlers.go:56-64`
-**Issue:** Article rendering hardcodes source type to "reddit"
-**Impact:** Semantic Scholar articles display incorrect metadata (citations shown as comments)
-**Root Cause:** Collector Article model doesn't include source_type field
-**Fix Required:** Either join with sources table or add source_type to Article model
+### 1. Source Type Detection ✅ RESOLVED (2025-11-15)
+**File:** `internal/handlers/handlers.go:57-80`
+**Was:** Article rendering hardcoded source type to "reddit"
+**Fixed:** Implemented source type lookup map to avoid N+1 queries
 
+**Implementation:**
 ```go
-// Current (WRONG):
-sourceType := "reddit" // Hardcoded
+// Fetch sources once and build lookup map
+collectorSources, err := h.collector.GetSources(ctx)
+sourceTypeMap := make(map[string]string)
+for _, s := range collectorSources {
+    sourceTypeMap[s.ID] = s.Type
+}
 
-// Need to implement:
-sourceType := getSourceType(a.SourceID) // Lookup from sources
+// O(1) lookup for each article
+sourceType := sourceTypeMap[a.SourceID]
+if sourceType == "" {
+    sourceType = "reddit" // Fallback for legacy/orphaned articles
+}
 ```
+
+### 2. Semantic Scholar Support ✅ RESOLVED (2025-11-15)
+**Files:** `templates/components/add-source-form.templ`, `internal/handlers/handlers.go`, `internal/handlers/config_builders.go`
+**Was:** Only Reddit sources supported
+**Fixed:** Full multi-source support with progressive disclosure form
+
+**Features Implemented:**
+- Source type selector (Reddit vs Semantic Scholar)
+- Conditional form fields using Alpine.js
+- Progressive disclosure (required fields + collapsible advanced options)
+- Separate credentials section with password masking
+- Config builders with validation for both source types
+- Proper error handling and field-specific validation
+
+## Critical Issues
 
 ### 2. Pause/Resume Button Non-Functional
 **File:** `templates/components/source-card.templ:47-63`
@@ -27,20 +48,7 @@ sourceType := getSourceType(a.SourceID) // Lookup from sources
 
 ## Plan Deviations
 
-### 1. Semantic Scholar Not Implemented
-**Planned:** Support both Reddit and Semantic Scholar sources
-**Actual:** Only Reddit sources are supported
-**Files Affected:**
-- `templates/components/add-source-form.templ` - Only has subreddit field
-- `internal/handlers/handlers.go:172` - Hardcodes `Type: "reddit"`
-
-**To Add S2 Support:**
-1. Add source type selector to form
-2. Conditional form fields (subreddit OR paper_id/query)
-3. Build appropriate config JSON based on type
-4. Update validation logic
-
-### 2. go-humanize Dependency Unused
+### 1. go-humanize Dependency Unused
 **Issue:** Dependency included but never imported
 **Impact:** Unnecessary binary bloat
 **Fix:** Either use `humanize.Time()` instead of custom `RelativeTime()` or remove dependency
@@ -172,4 +180,11 @@ Requires modern browsers with ES6 support
 ---
 
 **Last Updated:** 2025-11-15
-**Review Needed:** After implementing fixes, update this document
+**Recent Changes:**
+- ✅ Resolved Critical Issue #1: Source Type Detection
+- ✅ Resolved Plan Deviation #1: Semantic Scholar Support
+- Added multi-source form with progressive disclosure UI
+- Implemented config builders with validation
+- Updated article display to show citations for S2 papers
+
+**Review Needed:** Consider adding unit tests for config builders and integration tests for multi-source workflows

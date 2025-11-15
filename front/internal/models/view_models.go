@@ -1,6 +1,7 @@
 package models
 
 import (
+	"net/url"
 	"time"
 
 	"github.com/cheolwanpark/meows/front/internal/collector"
@@ -93,11 +94,11 @@ func FromCollectorSource(s collector.Source) Source {
 		if mode == "search" {
 			query := ExtractConfigField(s.Config, "query")
 			source.Name = "S2: " + query
-			source.URL = "https://www.semanticscholar.org/search?q=" + query
+			source.URL = "https://www.semanticscholar.org/search?q=" + url.QueryEscape(query)
 		} else {
 			paperID := ExtractConfigField(s.Config, "paper_id")
 			source.Name = "S2: Paper " + paperID
-			source.URL = "https://www.semanticscholar.org/paper/" + paperID
+			source.URL = "https://www.semanticscholar.org/paper/" + url.PathEscape(paperID)
 		}
 	}
 

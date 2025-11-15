@@ -54,13 +54,28 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert to view models (we need to get source types)
-	// For now, assume all articles are from Reddit sources
-	// TODO: Add source type mapping from articles
+	// Fetch sources to build source type lookup map (avoids N+1 queries)
+	collectorSources, err := h.collector.GetSources(ctx)
+	if err != nil {
+		slog.Error("Failed to fetch sources", "error", err)
+		// Continue with empty map if sources fetch fails
+		collectorSources = []collector.Source{}
+	}
+
+	// Build sourceID -> sourceType map for O(1) lookups
+	sourceTypeMap := make(map[string]string)
+	for _, s := range collectorSources {
+		sourceTypeMap[s.ID] = s.Type
+	}
+
+	// Convert to view models using source type map
 	articles := make([]models.Article, 0, len(collectorArticles))
 	for _, a := range collectorArticles {
-		// Determine source type (this is a simplification)
-		sourceType := "reddit" // Default to reddit for now
+		// Look up source type from map, default to "reddit" if not found
+		sourceType := sourceTypeMap[a.SourceID]
+		if sourceType == "" {
+			sourceType = "reddit" // Fallback for legacy/orphaned articles
+		}
 		articles = append(articles, models.FromCollectorArticle(a, sourceType))
 	}
 
@@ -114,22 +129,41 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subreddit := r.FormValue("subreddit")
+	sourceType := r.FormValue("source_type")
 	cronExpr := r.FormValue("cron")
 
 	// Validate inputs
 	errors := models.FormErrors{}
 
-	if subreddit == "" {
-		errors.Name = "Subreddit name is required"
+	// Validate source type
+	if sourceType == "" {
+		errors.General = "Source type is required"
+	} else if sourceType != "reddit" && sourceType != "semantic_scholar" {
+		errors.General = "Invalid source type. Must be 'reddit' or 'semantic_scholar'"
 	}
 
+	// Validate cron expression
 	if cronExpr == "" {
 		errors.Cron = "Cron expression is required"
 	} else {
-		// Validate cron expression
 		if _, err := cron.ParseStandard(cronExpr); err != nil {
 			errors.Cron = "Invalid cron expression format"
+		}
+	}
+
+	// Build config based on source type
+	var config map[string]interface{}
+	var configErr error
+
+	if sourceType == "reddit" {
+		config, configErr = buildRedditConfig(r)
+		if configErr != nil {
+			errors.General = configErr.Error()
+		}
+	} else if sourceType == "semantic_scholar" {
+		config, configErr = buildSemanticScholarConfig(r)
+		if configErr != nil {
+			errors.General = configErr.Error()
 		}
 	}
 
@@ -137,33 +171,28 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 	if errors.HasErrors() {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		csrfToken := h.csrf.GetToken(r)
-		component := components.AddSourceForm(csrfToken, errors, map[string]string{
-			"subreddit": subreddit,
-			"cron":      cronExpr,
-		})
+		// Preserve form values for user convenience
+		formValues := make(map[string]string)
+		for key, values := range r.Form {
+			if len(values) > 0 {
+				formValues[key] = values[0]
+			}
+		}
+		component := components.AddSourceForm(csrfToken, errors, formValues)
 		component.Render(r.Context(), w)
 		return
 	}
 
-	// Build Reddit config
-	config := map[string]interface{}{
-		"subreddit":           subreddit,
-		"sort":                "hot",
-		"limit":               25,
-		"min_score":           10,
-		"min_comments":        5,
-		"user_agent":          "meows/1.0",
-		"rate_limit_delay_ms": 2000,
-	}
-
+	// Marshal config to JSON
 	configJSON, err := json.Marshal(config)
 	if err != nil {
+		slog.Error("Failed to marshal config", "error", err)
 		errors.General = "Failed to create source configuration"
 		w.WriteHeader(http.StatusInternalServerError)
 		csrfToken := h.csrf.GetToken(r)
 		component := components.AddSourceForm(csrfToken, errors, map[string]string{
-			"subreddit": subreddit,
-			"cron":      cronExpr,
+			"source_type": sourceType,
+			"cron":        cronExpr,
 		})
 		component.Render(r.Context(), w)
 		return
@@ -171,21 +200,25 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 
 	// Create source via collector
 	createReq := collector.CreateSourceRequest{
-		Type:     "reddit",
+		Type:     sourceType,
 		Config:   configJSON,
 		CronExpr: cronExpr,
 	}
 
 	source, err := h.collector.CreateSource(ctx, createReq)
 	if err != nil {
-		slog.Error("Failed to create source", "error", err)
-		errors.General = "Failed to create source: " + err.Error()
+		slog.Error("Failed to create source", "error", err, "type", sourceType)
+		// Provide user-friendly error message instead of exposing internal errors
+		errors.General = "Failed to create source. Please check your configuration and try again."
 		w.WriteHeader(http.StatusInternalServerError)
 		csrfToken := h.csrf.GetToken(r)
-		component := components.AddSourceForm(csrfToken, errors, map[string]string{
-			"subreddit": subreddit,
-			"cron":      cronExpr,
-		})
+		formValues := make(map[string]string)
+		for key, values := range r.Form {
+			if len(values) > 0 {
+				formValues[key] = values[0]
+			}
+		}
+		component := components.AddSourceForm(csrfToken, errors, formValues)
 		component.Render(r.Context(), w)
 		return
 	}

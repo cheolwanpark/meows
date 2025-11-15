@@ -7,16 +7,48 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 		hx-post="/config/sources"
 		hx-target="#source-list"
 		hx-swap="afterbegin"
-		class="space-y-4 p-6 border rounded-lg bg-card"
+		class="space-y-5 p-6 border rounded-lg bg-card"
+		x-data="{ sourceType: 'reddit', mode: 'search', sort: 'hot', showAdvanced: false, showCredentials: false }"
 	>
 		<input type="hidden" name="csrf_token" value={ csrfToken }/>
 
-		<h2 class="text-xl font-serif font-bold mb-4">Add New Source</h2>
+		<h2 class="text-xl font-serif font-bold">Add New Source</h2>
 
-		<!-- Subreddit Name -->
+		<!-- Step 1: Source Type Selector -->
 		<div>
+			<label class="block text-sm font-medium text-foreground mb-2">
+				Source Type <span class="text-destructive">*</span>
+			</label>
+			<div class="flex gap-4">
+				<label class="flex items-center space-x-2 cursor-pointer">
+					<input
+						type="radio"
+						name="source_type"
+						value="reddit"
+						x-model="sourceType"
+						class="w-4 h-4 text-[#ff6b35] border-gray-300 focus:ring-[#ff6b35]"
+					/>
+					<span class="text-sm">Reddit</span>
+				</label>
+				<label class="flex items-center space-x-2 cursor-pointer">
+					<input
+						type="radio"
+						name="source_type"
+						value="semantic_scholar"
+						x-model="sourceType"
+						class="w-4 h-4 text-[#ff6b35] border-gray-300 focus:ring-[#ff6b35]"
+					/>
+					<span class="text-sm">Semantic Scholar</span>
+				</label>
+			</div>
+		</div>
+
+		<!-- Step 2: Required Fields (Conditional) -->
+
+		<!-- Reddit: Subreddit -->
+		<div x-show="sourceType === 'reddit'" x-cloak>
 			<label for="subreddit" class="block text-sm font-medium text-foreground mb-1.5">
-				Subreddit Name
+				Subreddit Name <span class="text-destructive">*</span>
 			</label>
 			<input
 				type="text"
@@ -24,19 +56,113 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 				name="subreddit"
 				value={ values["subreddit"] }
 				placeholder="e.g., programming"
-				required
-				class={ templ.KV("w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent", true),
-					templ.KV("border-destructive", errors.Name != "") }
+				class={ "w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent" }
 			/>
-			if errors.Name != "" {
-				<p class="text-xs text-destructive mt-1">{ errors.Name }</p>
-			}
+			<p class="text-xs text-muted-foreground mt-1">Enter the subreddit name without "r/"</p>
 		</div>
 
-		<!-- Cron Expression -->
+		<!-- Reddit: Sort -->
+		<div x-show="sourceType === 'reddit'" x-cloak>
+			<label for="sort" class="block text-sm font-medium text-foreground mb-1.5">
+				Sort By
+			</label>
+			<select
+				id="sort"
+				name="sort"
+				x-model="sort"
+				class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+			>
+				<option value="hot">Hot</option>
+				<option value="new">New</option>
+				<option value="top">Top</option>
+				<option value="rising">Rising</option>
+			</select>
+		</div>
+
+		<!-- Reddit: Time Filter (only for 'top' sort) -->
+		<div x-show="sourceType === 'reddit' && sort === 'top'" x-cloak>
+			<label for="time_filter" class="block text-sm font-medium text-foreground mb-1.5">
+				Time Filter
+			</label>
+			<select
+				id="time_filter"
+				name="time_filter"
+				class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+			>
+				<option value="">All Time (default)</option>
+				<option value="hour">Past Hour</option>
+				<option value="day">Past Day</option>
+				<option value="week">Past Week</option>
+				<option value="month">Past Month</option>
+				<option value="year">Past Year</option>
+			</select>
+		</div>
+
+		<!-- Semantic Scholar: Mode -->
+		<div x-show="sourceType === 'semantic_scholar'" x-cloak>
+			<label class="block text-sm font-medium text-foreground mb-2">
+				Mode <span class="text-destructive">*</span>
+			</label>
+			<div class="flex gap-4">
+				<label class="flex items-center space-x-2 cursor-pointer">
+					<input
+						type="radio"
+						name="mode"
+						value="search"
+						x-model="mode"
+						class="w-4 h-4 text-[#ff6b35] border-gray-300 focus:ring-[#ff6b35]"
+					/>
+					<span class="text-sm">Search Papers</span>
+				</label>
+				<label class="flex items-center space-x-2 cursor-pointer">
+					<input
+						type="radio"
+						name="mode"
+						value="recommendations"
+						x-model="mode"
+						class="w-4 h-4 text-[#ff6b35] border-gray-300 focus:ring-[#ff6b35]"
+					/>
+					<span class="text-sm">Paper Recommendations</span>
+				</label>
+			</div>
+		</div>
+
+		<!-- Semantic Scholar: Query (for search mode) -->
+		<div x-show="sourceType === 'semantic_scholar' && mode === 'search'" x-cloak>
+			<label for="query" class="block text-sm font-medium text-foreground mb-1.5">
+				Search Query <span class="text-destructive">*</span>
+			</label>
+			<input
+				type="text"
+				id="query"
+				name="query"
+				value={ values["query"] }
+				placeholder="e.g., large language models"
+				class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+			/>
+			<p class="text-xs text-muted-foreground mt-1">Keywords to search for in academic papers</p>
+		</div>
+
+		<!-- Semantic Scholar: Paper ID (for recommendations mode) -->
+		<div x-show="sourceType === 'semantic_scholar' && mode === 'recommendations'" x-cloak>
+			<label for="paper_id" class="block text-sm font-medium text-foreground mb-1.5">
+				Paper ID <span class="text-destructive">*</span>
+			</label>
+			<input
+				type="text"
+				id="paper_id"
+				name="paper_id"
+				value={ values["paper_id"] }
+				placeholder="e.g., 649def34f8be52c8b66281af98ae884c09aef38b"
+				class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+			/>
+			<p class="text-xs text-muted-foreground mt-1">Semantic Scholar paper ID to get recommendations for</p>
+		</div>
+
+		<!-- Cron Expression (Always visible) -->
 		<div>
 			<label for="cron" class="block text-sm font-medium text-foreground mb-1.5">
-				Schedule (Cron Expression)
+				Schedule (Cron Expression) <span class="text-destructive">*</span>
 			</label>
 			<input
 				type="text"
@@ -44,7 +170,6 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 				name="cron"
 				value={ values["cron"] }
 				placeholder="0 */6 * * * (every 6 hours)"
-				required
 				class={ templ.KV("w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent", true),
 					templ.KV("border-destructive", errors.Cron != "") }
 			/>
@@ -56,13 +181,232 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 			</p>
 		</div>
 
-		<!-- Category (auto-determined, display only) -->
+		<!-- Step 3: Advanced Options (Collapsible) -->
 		<div>
-			<label class="block text-sm font-medium text-foreground mb-1.5">
-				Source Type
-			</label>
-			<div class="text-sm text-muted-foreground">
-				Reddit (category auto-detected from subreddit)
+			<button
+				type="button"
+				@click="showAdvanced = !showAdvanced"
+				class="text-sm font-medium text-[#ff6b35] hover:underline flex items-center gap-1"
+			>
+				<span x-text="showAdvanced ? '▼' : '▶'"></span>
+				<span>Advanced Options</span>
+			</button>
+
+			<div x-show="showAdvanced" x-cloak class="mt-3 space-y-4 pl-4 border-l-2 border-muted">
+				<!-- Reddit Advanced -->
+				<div x-show="sourceType === 'reddit'" x-cloak class="space-y-4">
+					<div class="grid grid-cols-2 gap-4">
+						<div>
+							<label for="limit" class="block text-sm font-medium text-foreground mb-1.5">
+								Post Limit
+							</label>
+							<input
+								type="number"
+								id="limit"
+								name="limit"
+								value={ getValueOrDefault(values, "limit", "25") }
+								placeholder="25"
+								min="1"
+								max="100"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+						<div>
+							<label for="min_score" class="block text-sm font-medium text-foreground mb-1.5">
+								Min Score
+							</label>
+							<input
+								type="number"
+								id="min_score"
+								name="min_score"
+								value={ getValueOrDefault(values, "min_score", "10") }
+								placeholder="10"
+								min="0"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+					</div>
+					<div class="grid grid-cols-2 gap-4">
+						<div>
+							<label for="min_comments" class="block text-sm font-medium text-foreground mb-1.5">
+								Min Comments
+							</label>
+							<input
+								type="number"
+								id="min_comments"
+								name="min_comments"
+								value={ getValueOrDefault(values, "min_comments", "5") }
+								placeholder="5"
+								min="0"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+						<div>
+							<label for="rate_limit_delay_ms" class="block text-sm font-medium text-foreground mb-1.5">
+								Rate Limit (ms)
+							</label>
+							<input
+								type="number"
+								id="rate_limit_delay_ms"
+								name="rate_limit_delay_ms"
+								value={ getValueOrDefault(values, "rate_limit_delay_ms", "2000") }
+								placeholder="2000"
+								min="100"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+					</div>
+				</div>
+
+				<!-- Semantic Scholar Advanced -->
+				<div x-show="sourceType === 'semantic_scholar'" x-cloak class="space-y-4">
+					<div class="grid grid-cols-2 gap-4">
+						<div>
+							<label for="max_results" class="block text-sm font-medium text-foreground mb-1.5">
+								Max Results
+							</label>
+							<input
+								type="number"
+								id="max_results"
+								name="max_results"
+								value={ getValueOrDefault(values, "max_results", "25") }
+								placeholder="25"
+								min="1"
+								max="100"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+						<div>
+							<label for="min_citations" class="block text-sm font-medium text-foreground mb-1.5">
+								Min Citations
+							</label>
+							<input
+								type="number"
+								id="min_citations"
+								name="min_citations"
+								value={ getValueOrDefault(values, "min_citations", "10") }
+								placeholder="10"
+								min="0"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+					</div>
+					<div class="grid grid-cols-2 gap-4">
+						<div>
+							<label for="year" class="block text-sm font-medium text-foreground mb-1.5">
+								Year Filter (optional)
+							</label>
+							<input
+								type="text"
+								id="year"
+								name="year"
+								value={ values["year"] }
+								placeholder="e.g., 2024 or 2020-2024"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+						<div>
+							<label for="rate_limit_delay_ms_s2" class="block text-sm font-medium text-foreground mb-1.5">
+								Rate Limit (ms)
+							</label>
+							<input
+								type="number"
+								id="rate_limit_delay_ms_s2"
+								name="rate_limit_delay_ms"
+								value={ getValueOrDefault(values, "rate_limit_delay_ms", "1000") }
+								placeholder="1000"
+								min="100"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Step 4: Credentials (Collapsible, Password-masked) -->
+		<div>
+			<button
+				type="button"
+				@click="showCredentials = !showCredentials"
+				class="text-sm font-medium text-[#ff6b35] hover:underline flex items-center gap-1"
+			>
+				<span x-text="showCredentials ? '▼' : '▶'"></span>
+				<span>Credentials (Optional)</span>
+			</button>
+
+			<div x-show="showCredentials" x-cloak class="mt-3 space-y-4 pl-4 border-l-2 border-muted">
+				<!-- Reddit OAuth -->
+				<div x-show="sourceType === 'reddit'" x-cloak class="space-y-3">
+					<p class="text-xs text-muted-foreground">Reddit OAuth (all 4 fields required if using)</p>
+					<div class="grid grid-cols-2 gap-4">
+						<div>
+							<label for="oauth_client_id" class="block text-xs font-medium text-foreground mb-1">
+								Client ID
+							</label>
+							<input
+								type="password"
+								id="oauth_client_id"
+								name="oauth_client_id"
+								value={ values["oauth_client_id"] }
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+						<div>
+							<label for="oauth_client_secret" class="block text-xs font-medium text-foreground mb-1">
+								Client Secret
+							</label>
+							<input
+								type="password"
+								id="oauth_client_secret"
+								name="oauth_client_secret"
+								value={ values["oauth_client_secret"] }
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+					</div>
+					<div class="grid grid-cols-2 gap-4">
+						<div>
+							<label for="oauth_username" class="block text-xs font-medium text-foreground mb-1">
+								Username
+							</label>
+							<input
+								type="text"
+								id="oauth_username"
+								name="oauth_username"
+								value={ values["oauth_username"] }
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+						<div>
+							<label for="oauth_password" class="block text-xs font-medium text-foreground mb-1">
+								Password
+							</label>
+							<input
+								type="password"
+								id="oauth_password"
+								name="oauth_password"
+								value={ values["oauth_password"] }
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+					</div>
+				</div>
+
+				<!-- Semantic Scholar API Key -->
+				<div x-show="sourceType === 'semantic_scholar'" x-cloak>
+					<label for="api_key" class="block text-xs font-medium text-foreground mb-1">
+						API Key (optional, for higher rate limits)
+					</label>
+					<input
+						type="password"
+						id="api_key"
+						name="api_key"
+						value={ values["api_key"] }
+						placeholder="Enter Semantic Scholar API key"
+						class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+					/>
+				</div>
 			</div>
 		</div>
 
@@ -81,4 +425,11 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 			<span class="htmx-indicator ml-2">⏳</span>
 		</button>
 	</form>
+}
+
+func getValueOrDefault(values map[string]string, key, defaultVal string) string {
+	if val, ok := values[key]; ok && val != "" {
+		return val
+	}
+	return defaultVal
 }
