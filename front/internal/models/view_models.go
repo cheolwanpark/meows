@@ -2,6 +2,7 @@ package models
 
 import (
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/cheolwanpark/meows/front/internal/collector"
@@ -80,25 +81,42 @@ func FromCollectorSource(s collector.Source) Source {
 		LastError: s.LastError,
 	}
 
-	// Determine category
-	source.Category = DetermineCategory(s.Type, s.Config)
+	// Determine category using ExternalID (which contains subreddit/query/paper_id)
+	source.Category = DetermineCategory(s.Type, s.ExternalID)
 	source.CategoryEmoji = CategoryEmoji(source.Category)
 
-	// Extract name and URL from config
+	// Extract name and URL using ExternalID
 	if s.Type == "reddit" {
-		subreddit := ExtractConfigField(s.Config, "subreddit")
-		source.Name = "r/" + subreddit
-		source.URL = "https://reddit.com/r/" + subreddit
-	} else if s.Type == "semantic_scholar" {
-		mode := ExtractConfigField(s.Config, "mode")
-		if mode == "search" {
-			query := ExtractConfigField(s.Config, "query")
-			source.Name = "S2: " + query
-			source.URL = "https://www.semanticscholar.org/search?q=" + url.QueryEscape(query)
+		if s.ExternalID != "" {
+			source.Name = "r/" + s.ExternalID
+			source.URL = "https://reddit.com/r/" + url.PathEscape(s.ExternalID)
 		} else {
-			paperID := ExtractConfigField(s.Config, "paper_id")
-			source.Name = "S2: Paper " + paperID
-			source.URL = "https://www.semanticscholar.org/paper/" + url.PathEscape(paperID)
+			source.Name = s.ConfigSummary
+			source.URL = ""
+		}
+	} else if s.Type == "semantic_scholar" {
+		if s.ExternalID != "" {
+			// Determine if this is a paper ID or a search query
+			// Paper IDs: DOI (starts with "10.") or S2 Corpus ID (40-char hex string)
+			isPaperID := strings.HasPrefix(s.ExternalID, "10.") || (len(s.ExternalID) == 40 && isHexString(s.ExternalID))
+
+			if isPaperID {
+				source.Name = "S2: Paper " + s.ExternalID
+				source.URL = "https://www.semanticscholar.org/paper/" + url.PathEscape(s.ExternalID)
+			} else {
+				// Search query
+				source.Name = "S2: " + s.ExternalID
+				source.URL = "https://www.semanticscholar.org/search?q=" + url.QueryEscape(s.ExternalID)
+			}
+		} else {
+			source.Name = s.ConfigSummary
+			source.URL = ""
+		}
+	} else {
+		// Fallback for unknown source types
+		source.Name = s.ConfigSummary
+		if source.Name == "" {
+			source.Name = "Unknown Source"
 		}
 	}
 

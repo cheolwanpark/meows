@@ -124,11 +124,10 @@ func ExtractConfigField(config json.RawMessage, field string) string {
 }
 
 // DetermineCategory determines the category from a source config
-func DetermineCategory(sourceType string, config json.RawMessage) string {
-	// For Reddit, we can infer category from subreddit name
+func DetermineCategory(sourceType string, externalID string) string {
+	// For Reddit, we can infer category from subreddit name (use externalID which contains the subreddit)
 	if sourceType == "reddit" {
-		subreddit := ExtractConfigField(config, "subreddit")
-		subreddit = strings.ToLower(subreddit)
+		subreddit := strings.ToLower(externalID)
 
 		techSubreddits := []string{"programming", "golang", "javascript", "python", "technology", "coding", "webdev"}
 		newsSubreddits := []string{"news", "worldnews", "politics"}
@@ -163,4 +162,14 @@ func DetermineCategory(sourceType string, config json.RawMessage) string {
 	}
 
 	return "other"
+}
+
+// isHexString checks if a string contains only hexadecimal characters
+func isHexString(s string) bool {
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return len(s) > 0
 }

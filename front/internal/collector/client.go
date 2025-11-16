@@ -44,6 +44,7 @@ type Source struct {
 	ID            string          `json:"id"`
 	Type          string          `json:"type"`
 	Config        json.RawMessage `json:"config"`
+	ConfigSummary string          `json:"config_summary"`
 	CronExpr      string          `json:"cron_expr"`
 	ExternalID    string          `json:"external_id"`
 	LastRunAt     *time.Time      `json:"last_run_at,omitempty"`

@@ -265,6 +265,25 @@ func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Success: return 204 No Content (htmx will remove the element)
-	w.WriteHeader(http.StatusNoContent)
+	// Fetch updated source list
+	sources, err := h.collector.GetSources(ctx)
+	if err != nil {
+		slog.Error("Failed to fetch sources after deletion", "error", err)
+		// Source was deleted successfully, but we can't render the updated list
+		// Trigger a full page refresh to show accurate state
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Convert to view models
+	viewSources := make([]models.Source, len(sources))
+	for i, s := range sources {
+		viewSources[i] = models.FromCollectorSource(s)
+	}
+
+	// Return updated source list HTML
+	csrfToken := h.csrf.GetToken(r)
+	component := components.SourceList(viewSources, csrfToken)
+	component.Render(r.Context(), w)
 }

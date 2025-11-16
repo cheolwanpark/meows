@@ -55,6 +55,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 				type="text"
 				id="subreddit"
 				name="subreddit"
+				:disabled="sourceType !== 'reddit'"
 				value={ values["subreddit"] }
 				placeholder="e.g., programming"
 				class={ "w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent" }
@@ -71,6 +72,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 				id="sort"
 				name="sort"
 				x-model="sort"
+				:disabled="sourceType !== 'reddit'"
 				class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
 			>
 				<option value="hot">Hot</option>
@@ -88,6 +90,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 			<select
 				id="time_filter"
 				name="time_filter"
+				:disabled="sourceType !== 'reddit' || sort !== 'top'"
 				class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
 			>
 				<option value="">All Time (default)</option>
@@ -111,6 +114,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 						name="mode"
 						value="search"
 						x-model="mode"
+						:disabled="sourceType !== 'semantic_scholar'"
 						class="w-4 h-4 text-[#ff6b35] border-gray-300 focus:ring-[#ff6b35]"
 					/>
 					<span class="text-sm">Search Papers</span>
@@ -121,6 +125,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 						name="mode"
 						value="recommendations"
 						x-model="mode"
+						:disabled="sourceType !== 'semantic_scholar'"
 						class="w-4 h-4 text-[#ff6b35] border-gray-300 focus:ring-[#ff6b35]"
 					/>
 					<span class="text-sm">Paper Recommendations</span>
@@ -137,6 +142,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 				type="text"
 				id="query"
 				name="query"
+				:disabled="sourceType !== 'semantic_scholar' || mode !== 'search'"
 				value={ values["query"] }
 				placeholder="e.g., large language models"
 				class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
@@ -153,6 +159,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 				type="text"
 				id="paper_id"
 				name="paper_id"
+				:disabled="sourceType !== 'semantic_scholar' || mode !== 'recommendations'"
 				value={ values["paper_id"] }
 				placeholder="e.g., 649def34f8be52c8b66281af98ae884c09aef38b"
 				class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
@@ -205,6 +212,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 								type="number"
 								id="limit"
 								name="limit"
+								:disabled="sourceType !== 'reddit'"
 								value={ getValueOrDefault(values, "limit", "25") }
 								placeholder="25"
 								min="1"
@@ -220,6 +228,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 								type="number"
 								id="min_score"
 								name="min_score"
+								:disabled="sourceType !== 'reddit'"
 								value={ getValueOrDefault(values, "min_score", "10") }
 								placeholder="10"
 								min="0"
@@ -236,6 +245,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 								type="number"
 								id="min_comments"
 								name="min_comments"
+								:disabled="sourceType !== 'reddit'"
 								value={ getValueOrDefault(values, "min_comments", "5") }
 								placeholder="5"
 								min="0"
@@ -250,6 +260,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 								type="number"
 								id="rate_limit_delay_ms"
 								name="rate_limit_delay_ms"
+								:disabled="sourceType !== 'reddit'"
 								value={ getValueOrDefault(values, "rate_limit_delay_ms", "2000") }
 								placeholder="2000"
 								min="100"
@@ -270,6 +281,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 								type="number"
 								id="max_results"
 								name="max_results"
+								:disabled="sourceType !== 'semantic_scholar'"
 								value={ getValueOrDefault(values, "max_results", "25") }
 								placeholder="25"
 								min="1"
@@ -285,6 +297,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 								type="number"
 								id="min_citations"
 								name="min_citations"
+								:disabled="sourceType !== 'semantic_scholar'"
 								value={ getValueOrDefault(values, "min_citations", "10") }
 								placeholder="10"
 								min="0"
@@ -301,6 +314,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 								type="text"
 								id="year"
 								name="year"
+								:disabled="sourceType !== 'semantic_scholar'"
 								value={ values["year"] }
 								placeholder="e.g., 2024 or 2020-2024"
 								class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
@@ -314,6 +328,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 								type="number"
 								id="rate_limit_delay_ms_s2"
 								name="rate_limit_delay_ms"
+								:disabled="sourceType !== 'semantic_scholar'"
 								value={ getValueOrDefault(values, "rate_limit_delay_ms", "1000") }
 								placeholder="1000"
 								min="100"
@@ -349,6 +364,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 								type="password"
 								id="oauth_client_id"
 								name="oauth_client_id"
+								:disabled="sourceType !== 'reddit'"
 								value={ values["oauth_client_id"] }
 								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
 							/>
@@ -361,6 +377,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 								type="password"
 								id="oauth_client_secret"
 								name="oauth_client_secret"
+								:disabled="sourceType !== 'reddit'"
 								value={ values["oauth_client_secret"] }
 								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
 							/>
@@ -375,6 +392,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 								type="text"
 								id="oauth_username"
 								name="oauth_username"
+								:disabled="sourceType !== 'reddit'"
 								value={ values["oauth_username"] }
 								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
 							/>
@@ -387,6 +405,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 								type="password"
 								id="oauth_password"
 								name="oauth_password"
+								:disabled="sourceType !== 'reddit'"
 								value={ values["oauth_password"] }
 								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
 							/>
@@ -403,6 +422,7 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 						type="password"
 						id="api_key"
 						name="api_key"
+						:disabled="sourceType !== 'semantic_scholar'"
 						value={ values["api_key"] }
 						placeholder="Enter Semantic Scholar API key"
 						class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
