@@ -1,0 +1,78 @@
+# syntax=docker/dockerfile:1
+
+# ============================================================================
+# Node Builder Stage: Build Tailwind CSS
+# ============================================================================
+FROM node:20-alpine AS node-builder
+
+WORKDIR /build
+
+# Copy package files and install dependencies (including dev dependencies for Tailwind)
+COPY front/package.json front/package-lock.json* ./
+RUN npm ci || npm install
+
+# Copy necessary files for Tailwind CSS build
+COPY front/tailwind.config.js* front/postcss.config.js* ./
+COPY front/static/css/input.css ./static/css/
+COPY front/templates/ ./templates/
+
+# Build minified production CSS
+RUN npm run build:css
+
+# ============================================================================
+# Go Builder Stage: Generate templ files and build binary
+# ============================================================================
+FROM golang:alpine AS go-builder
+
+# Install templ CLI for template generation (pinned to match go.mod version)
+RUN go install github.com/a-h/templ/cmd/templ@v0.3.960
+
+WORKDIR /build
+
+# Copy go.mod and go.sum for dependency caching
+COPY front/go.mod front/go.sum ./
+RUN go mod download
+
+# Copy the entire frontend source code
+COPY front/ ./
+
+# Copy the built CSS from node-builder stage
+COPY --from=node-builder /build/static/css/output.css ./static/css/output.css
+
+# Generate Go code from templ templates
+RUN templ generate
+
+# Build a static binary with optimizations
+# -ldflags "-s -w" strips debug info and symbol table for smaller binary
+# Use build args for cross-platform support
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -ldflags="-s -w" \
+    -o /app/frontend \
+    ./cmd/server
+
+# ============================================================================
+# Runtime Stage: Minimal distroless image
+# ============================================================================
+FROM gcr.io/distroless/static-debian12:nonroot
+
+WORKDIR /app
+
+# Copy the binary from go-builder stage
+COPY --from=go-builder --chown=65532:65532 /app/frontend /app/frontend
+
+# Copy static assets (CSS, JavaScript, icons)
+# Note: templ templates are compiled into the binary, so we don't need templates/ directory
+COPY --from=go-builder --chown=65532:65532 /build/static/ /app/static/
+
+# Expose the HTTP server port
+EXPOSE 3000
+
+# Environment variables (can be overridden in compose.yaml)
+ENV PORT=3000 \
+    ENV=production \
+    LOG_LEVEL=info
+
+# Run the frontend service
+ENTRYPOINT ["/app/frontend"]

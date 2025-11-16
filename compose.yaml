@@ -1,0 +1,118 @@
+services:
+  # ============================================================================
+  # Init Container: Fix volume permissions for SQLite database
+  # ============================================================================
+  collector-init:
+    image: alpine:3.20
+    container_name: meows-collector-init
+
+    volumes:
+      # Mount the same volume as collector to fix permissions
+      - collector-data:/data
+
+    # Change ownership to nonroot user (UID 65532 = distroless nonroot user)
+    # Verify success and show permissions for debugging
+    command:
+      - sh
+      - -c
+      - |
+        echo "Setting ownership to 65532:65532 (distroless nonroot user)..."
+        chown -R 65532:65532 /data
+        echo "Permissions set successfully. Current ownership:"
+        ls -ld /data
+
+    # Prevent automatic restarts - this should run once per stack lifecycle
+    restart: "no"
+
+  # ============================================================================
+  # Collector Service: Backend API for article collection and scheduling
+  # ============================================================================
+  collector:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.collector
+
+    container_name: meows-collector
+
+    ports:
+      - "8080:8080"
+
+    environment:
+      # Database configuration
+      - DB_PATH=/data/meows.db
+
+      # Server configuration
+      - PORT=8080
+      - LOG_LEVEL=info
+
+      # Enable Swagger documentation UI (development only)
+      - ENABLE_SWAGGER=true
+
+      # Optional: Set maximum comment depth for Reddit crawling
+      # - MAX_COMMENT_DEPTH=5
+
+    volumes:
+      # Default: Docker-managed named volume for persistence
+      - collector-data:/data
+
+      # Optional: Uncomment to mount to host directory instead
+      # - ./data/collector:/data
+
+    # Ensure init container runs first to fix volume permissions
+    depends_on:
+      collector-init:
+        condition: service_completed_successfully
+
+    restart: unless-stopped
+
+    # Note: Healthcheck requires a /health endpoint to be implemented
+    # Distroless images don't have curl/wget, so we can't do HTTP checks easily
+    # healthcheck:
+    #   test: ["CMD", "/app/collector", "health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 40s
+
+  # ============================================================================
+  # Frontend Service: Web UI for browsing and managing articles
+  # ============================================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+
+    container_name: meows-frontend
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      # Server configuration
+      - PORT=3000
+      - ENV=production
+      - LOG_LEVEL=info
+
+      # Collector API connection
+      - COLLECTOR_URL=http://collector:8080
+
+      # Security: CSRF protection key (CHANGE THIS IN PRODUCTION!)
+      # Generate a random 32-character string for production use
+      - CSRF_KEY=${CSRF_KEY:-change-me-in-production-please-use-random-key}
+
+    depends_on:
+      - collector
+
+    restart: unless-stopped
+
+# ============================================================================
+# Volumes: Persistent storage for SQLite database
+# ============================================================================
+volumes:
+  collector-data:
+    driver: local
+    # Optional: Add driver options for custom mount points
+    # driver_opts:
+    #   type: none
+    #   o: bind
+    #   device: ./data/collector
