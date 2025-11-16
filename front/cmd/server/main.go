@@ -54,6 +54,7 @@ func main() {
 
 	// Routes
 	r.Get("/", h.Home)
+	r.Get("/articles/{id}", h.ArticleDetail)
 	r.Get("/config", h.ConfigPage)
 
 	// HTMX endpoints (with CSRF protection)

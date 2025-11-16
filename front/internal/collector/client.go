@@ -175,6 +175,56 @@ func (c *Client) DeleteSource(ctx context.Context, id string) error {
 	return nil
 }
 
+// Comment represents a comment on an article
+type Comment struct {
+	ID         string    `json:"id"`
+	ArticleID  string    `json:"article_id"`
+	ExternalID string    `json:"external_id"`
+	Author     string    `json:"author"`
+	Content    string    `json:"content"`
+	WrittenAt  time.Time `json:"written_at"`
+	ParentID   *string   `json:"parent_id,omitempty"`
+	Depth      int       `json:"depth"`
+}
+
+// ArticleDetail represents an article with its comments
+type ArticleDetail struct {
+	Article    Article   `json:"article"`
+	Comments   []Comment `json:"comments"`
+	SourceType string    `json:"source_type"`
+}
+
+// GetArticle fetches a single article with its comments from the collector
+func (c *Client) GetArticle(ctx context.Context, id string) (*ArticleDetail, error) {
+	url := fmt.Sprintf("%s/articles/%s", c.baseURL, id)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("article not found")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.parseError(resp)
+	}
+
+	var detail ArticleDetail
+	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return &detail, nil
+}
+
 // parseError parses an error response from the collector
 func (c *Client) parseError(resp *http.Response) error {
 	var errResp ErrorResponse

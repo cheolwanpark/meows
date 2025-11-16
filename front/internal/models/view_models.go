@@ -14,6 +14,7 @@ type Article struct {
 	SourceID  string
 	Title     string
 	Author    string
+	Content   string // Article body/selftext
 	URL       string
 	Domain    string
 	WrittenAt time.Time
@@ -30,6 +31,7 @@ func FromCollectorArticle(a collector.Article, sourceType string) Article {
 		SourceID:  a.SourceID,
 		Title:     a.Title,
 		Author:    a.Author,
+		Content:   a.Content,
 		URL:       a.URL,
 		Domain:    ExtractDomain(a.URL),
 		WrittenAt: a.WrittenAt,

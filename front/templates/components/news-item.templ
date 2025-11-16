@@ -16,23 +16,15 @@ templ NewsItem(article models.Article, index int) {
 		<div class="flex-1 min-w-0">
 			<!-- Title and domain -->
 			<div class="flex flex-wrap items-baseline gap-2 mb-1">
-				if article.URL != "" {
-					<a
-						href={ templ.SafeURL(article.URL) }
-						target="_blank"
-						rel="noopener noreferrer"
-						class="text-foreground hover:text-[#ff6b35] transition-colors font-medium text-base leading-snug"
-					>
-						{ article.Title }
-					</a>
-					if article.Domain != "" {
-						<span class="text-muted-foreground text-xs">
-							({ article.Domain })
-						</span>
-					}
-				} else {
-					<span class="text-foreground font-medium text-base leading-snug">
-						{ article.Title }
+				<a
+					href={ templ.SafeURL("/articles/" + article.ID) }
+					class="text-foreground hover:text-[#ff6b35] transition-colors font-medium text-base leading-snug"
+				>
+					{ article.Title }
+				</a>
+				if article.Domain != "" {
+					<span class="text-muted-foreground text-xs">
+						({ article.Domain })
 					</span>
 				}
 			</div>

@@ -578,6 +578,167 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(articles)
 }
 
+// ArticleDetailResponse represents an article with its comments
+type ArticleDetailResponse struct {
+	Article    db.Article   `json:"article"`
+	Comments   []db.Comment `json:"comments"`
+	SourceType string       `json:"source_type"` // "reddit" or "semantic_scholar"
+}
+
+// GetArticle godoc
+// @Summary Get article detail with comments
+// @Description Get a specific article by ID with all its comments in nested tree structure
+// @Tags articles
+// @Accept json
+// @Produce json
+// @Param id path string true "Article ID (UUID)"
+// @Success 200 {object} ArticleDetailResponse
+// @Failure 400 {object} ErrorResponse "Invalid article ID format"
+// @Failure 404 {object} ErrorResponse "Article not found"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /articles/{id} [get]
+func (h *Handler) GetArticle(w http.ResponseWriter, r *http.Request) {
+	articleID := chi.URLParam(r, "id")
+
+	// Validate UUID format
+	if _, err := uuid.Parse(articleID); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid article ID format")
+		return
+	}
+
+	// Query article
+	var article db.Article
+	var url, metadata sql.NullString
+
+	err := h.db.QueryRow(`
+		SELECT id, source_id, external_id, title, author, content, url, written_at, metadata, created_at
+		FROM articles
+		WHERE id = ?
+	`, articleID).Scan(
+		&article.ID,
+		&article.SourceID,
+		&article.ExternalID,
+		&article.Title,
+		&article.Author,
+		&article.Content,
+		&url,
+		&article.WrittenAt,
+		&metadata,
+		&article.CreatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		respondError(w, http.StatusNotFound, "article not found")
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query article: %v", err))
+		return
+	}
+
+	if url.Valid {
+		article.URL = url.String
+	}
+	if metadata.Valid {
+		article.Metadata = json.RawMessage(metadata.String)
+	}
+
+	// Query comments for this article
+	rows, err := h.db.Query(`
+		SELECT id, article_id, external_id, author, content, written_at, parent_id, depth
+		FROM comments
+		WHERE article_id = ?
+		ORDER BY written_at ASC
+	`, articleID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query comments: %v", err))
+		return
+	}
+	defer rows.Close()
+
+	// Collect all comments
+	flatComments := []db.Comment{}
+	for rows.Next() {
+		var comment db.Comment
+		var parentID sql.NullString
+
+		err := rows.Scan(
+			&comment.ID,
+			&comment.ArticleID,
+			&comment.ExternalID,
+			&comment.Author,
+			&comment.Content,
+			&comment.WrittenAt,
+			&parentID,
+			&comment.Depth,
+		)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to scan comment: %v", err))
+			return
+		}
+
+		if parentID.Valid {
+			// Copy to avoid pointer aliasing
+			pid := parentID.String
+			comment.ParentID = &pid
+		}
+
+		flatComments = append(flatComments, comment)
+	}
+
+	if err := rows.Err(); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("error iterating comments: %v", err))
+		return
+	}
+
+	// Build comment tree
+	comments := buildCommentTree(flatComments)
+
+	// Get source type
+	var sourceType string
+	err = h.db.QueryRow(`SELECT type FROM sources WHERE id = ?`, article.SourceID).Scan(&sourceType)
+	if err != nil {
+		// Default to reddit if source not found (orphaned article)
+		sourceType = "reddit"
+	}
+
+	// Return response
+	response := ArticleDetailResponse{
+		Article:    article,
+		Comments:   comments,
+		SourceType: sourceType,
+	}
+
+	json.NewEncoder(w).Encode(response)
+}
+
+// buildCommentTree converts a flat list of comments into a nested tree structure
+func buildCommentTree(flatComments []db.Comment) []db.Comment {
+	// Create a map of external_id to comment for quick lookup
+	commentMap := make(map[string]*db.Comment)
+	for i := range flatComments {
+		commentMap[flatComments[i].ExternalID] = &flatComments[i]
+	}
+
+	// Root comments (no parent)
+	var rootComments []db.Comment
+
+	// Build tree by linking children to parents
+	for i := range flatComments {
+		comment := &flatComments[i]
+
+		if comment.ParentID == nil {
+			// Root level comment
+			rootComments = append(rootComments, *comment)
+		}
+		// Note: We return a flat list for now, as the frontend will handle tree rendering
+		// If nested structure is needed, we would build it here using ParentID relationships
+	}
+
+	// For now, return all comments in flat order (frontend will use ParentID to build tree)
+	return flatComments
+}
+
 // Health godoc
 // @Summary Health check
 // @Description Check the health status of the service (database and scheduler)

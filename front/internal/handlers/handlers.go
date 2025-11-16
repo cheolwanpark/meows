@@ -102,6 +102,62 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 	component.Render(r.Context(), w)
 }
 
+// ArticleDetail renders the article detail page with comments
+func (h *Handler) ArticleDetail(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	// Get CSRF token
+	csrfToken := h.csrf.GetToken(r)
+	h.csrf.SetToken(w, r, csrfToken)
+
+	// Extract article ID from URL
+	articleID := chi.URLParam(r, "id")
+	if articleID == "" {
+		// Render 404 page
+		w.WriteHeader(http.StatusNotFound)
+		component := layouts.Base("Not Found", csrfToken, components.ErrorPage(
+			"Article Not Found",
+			"The article you're looking for doesn't exist or has been removed.",
+		))
+		component.Render(r.Context(), w)
+		return
+	}
+
+	// Fetch article detail from collector
+	detail, err := h.collector.GetArticle(ctx, articleID)
+	if err != nil {
+		slog.Error("Failed to fetch article detail", "article_id", articleID, "error", err)
+
+		// Check if it's a 404 error
+		if err.Error() == "article not found" {
+			w.WriteHeader(http.StatusNotFound)
+			component := layouts.Base("Not Found", csrfToken, components.ErrorPage(
+				"Article Not Found",
+				"The article you're looking for doesn't exist or has been removed.",
+			))
+			component.Render(r.Context(), w)
+			return
+		}
+
+		// Other errors (500)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		component := layouts.Base("Error", csrfToken, components.ErrorPage(
+			"Service Unavailable",
+			"Unable to fetch article details. The collector service may be down. Please try again later.",
+		))
+		component.Render(r.Context(), w)
+		return
+	}
+
+	// Convert article to view model using source type from detail
+	article := models.FromCollectorArticle(detail.Article, detail.SourceType)
+
+	// Render page
+	component := pages.ArticleDetailPage(article, detail.Comments, csrfToken)
+	component.Render(r.Context(), w)
+}
+
 // ConfigPage renders the source management page
 func (h *Handler) ConfigPage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)

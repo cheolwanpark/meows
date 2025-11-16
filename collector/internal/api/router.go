@@ -35,6 +35,7 @@ func SetupRouter(database *db.DB, sched *scheduler.Scheduler) http.Handler {
 
 	r.Get("/schedule", h.GetSchedule)
 	r.Get("/articles", h.ListArticles)
+	r.Get("/articles/{id}", h.GetArticle)
 	r.Get("/health", h.Health)
 	r.Get("/metrics", h.Metrics)
 
