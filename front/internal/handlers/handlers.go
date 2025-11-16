@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/cheolwanpark/meows/front/internal/collector"
 	"github.com/cheolwanpark/meows/front/internal/middleware"
@@ -157,8 +158,8 @@ func (h *Handler) ArticleDetail(w http.ResponseWriter, r *http.Request) {
 	component.Render(r.Context(), w)
 }
 
-// ConfigPage renders the source management page
-func (h *Handler) ConfigPage(w http.ResponseWriter, r *http.Request) {
+// SourcesPage renders the source management page
+func (h *Handler) SourcesPage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
 	defer cancel()
 
@@ -329,4 +330,91 @@ func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 	csrfToken := h.csrf.GetToken(r)
 	component := components.SourceList(viewSources, csrfToken)
 	component.Render(r.Context(), w)
+}
+
+// SettingsPage renders the global settings page
+func (h *Handler) SettingsPage(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	// Get CSRF token
+	csrfToken := h.csrf.GetToken(r)
+	h.csrf.SetToken(w, r, csrfToken)
+
+	// Fetch current global config from collector
+	config, err := h.collector.GetConfig(ctx)
+	if err != nil {
+		slog.Error("Failed to fetch global config", "error", err)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		component := layouts.Base("Error", csrfToken, components.ErrorPage(
+			"Service Unavailable",
+			"Unable to fetch settings. The collector service may be down. Please try again later.",
+		))
+		component.Render(r.Context(), w)
+		return
+	}
+
+	// Render settings page
+	component := pages.SettingsPage(*config, csrfToken, models.FormErrors{})
+	component.Render(r.Context(), w)
+}
+
+// UpdateSettings handles global settings update (htmx endpoint)
+func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	// Parse form
+	if err := r.ParseForm(); err != nil {
+		respondWithError(w, "Invalid form data", "Failed to parse form", err, http.StatusBadRequest)
+		return
+	}
+
+	// Build update request with only provided fields
+	req := collector.UpdateGlobalConfigRequest{}
+
+	// Cron expression
+	if cronExpr := r.FormValue("cron_expr"); cronExpr != "" {
+		req.CronExpr = &cronExpr
+	}
+
+	// Rate limits
+	if redditRL := r.FormValue("reddit_rate_limit_delay_ms"); redditRL != "" {
+		if val, err := strconv.Atoi(redditRL); err == nil {
+			req.RedditRateLimitDelayMs = &val
+		}
+	}
+	if s2RL := r.FormValue("semantic_scholar_rate_limit_delay_ms"); s2RL != "" {
+		if val, err := strconv.Atoi(s2RL); err == nil {
+			req.SemanticScholarRateLimitDelayMs = &val
+		}
+	}
+
+	// Credentials (only if non-empty)
+	if clientID := r.FormValue("reddit_client_id"); clientID != "" {
+		req.RedditClientID = &clientID
+	}
+	if clientSecret := r.FormValue("reddit_client_secret"); clientSecret != "" {
+		req.RedditClientSecret = &clientSecret
+	}
+	if username := r.FormValue("reddit_username"); username != "" {
+		req.RedditUsername = &username
+	}
+	if password := r.FormValue("reddit_password"); password != "" {
+		req.RedditPassword = &password
+	}
+	if apiKey := r.FormValue("semantic_scholar_api_key"); apiKey != "" {
+		req.SemanticScholarAPIKey = &apiKey
+	}
+
+	// Update config via collector
+	if _, err := h.collector.UpdateConfig(ctx, req); err != nil {
+		respondWithError(w, "Failed to update settings. Please check your inputs and try again.", "Failed to update config", err, http.StatusBadRequest)
+		return
+	}
+
+	// Return success message
+	w.Header().Set("HX-Trigger", "settingsUpdated")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`<div class="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-green-800 dark:text-green-200">Settings updated successfully!</div>`))
 }

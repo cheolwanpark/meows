@@ -55,13 +55,15 @@ func main() {
 	// Routes
 	r.Get("/", h.Home)
 	r.Get("/articles/{id}", h.ArticleDetail)
-	r.Get("/config", h.ConfigPage)
+	r.Get("/sources", h.SourcesPage)
+	r.Get("/settings", h.SettingsPage)
 
 	// HTMX endpoints (with CSRF protection)
 	r.Group(func(r chi.Router) {
 		r.Use(csrfMiddleware.Validate)
-		r.Post("/config/sources", h.CreateSource)
-		r.Delete("/config/sources/{id}", h.DeleteSource)
+		r.Post("/sources", h.CreateSource)
+		r.Delete("/sources/{id}", h.DeleteSource)
+		r.Patch("/api/settings", h.UpdateSettings)
 	})
 
 	// HTTP server

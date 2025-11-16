@@ -10,12 +10,40 @@ import (
 
 // GlobalConfig represents the global collector configuration
 // Stored as a singleton row in the global_config table
+// Credential fields store ENCRYPTED values
 type GlobalConfig struct {
 	ID                              int       `json:"id"`
 	CronExpr                        string    `json:"cron_expr"`
 	RedditRateLimitDelayMs          int       `json:"reddit_rate_limit_delay_ms"`
 	SemanticScholarRateLimitDelayMs int       `json:"semantic_scholar_rate_limit_delay_ms"`
+	RedditClientID                  string    `json:"-"` // Encrypted, never exposed in JSON
+	RedditClientSecret              string    `json:"-"` // Encrypted, never exposed in JSON
+	RedditUsername                  string    `json:"-"` // Encrypted, never exposed in JSON
+	RedditPassword                  string    `json:"-"` // Encrypted, never exposed in JSON
+	SemanticScholarAPIKey           string    `json:"-"` // Encrypted, never exposed in JSON
 	UpdatedAt                       time.Time `json:"updated_at"`
+}
+
+// GlobalConfigDTO is returned by the API (credentials omitted for security)
+type GlobalConfigDTO struct {
+	ID                              int       `json:"id"`
+	CronExpr                        string    `json:"cron_expr"`
+	RedditRateLimitDelayMs          int       `json:"reddit_rate_limit_delay_ms"`
+	SemanticScholarRateLimitDelayMs int       `json:"semantic_scholar_rate_limit_delay_ms"`
+	UpdatedAt                       time.Time `json:"updated_at"`
+}
+
+// UpdateGlobalConfigRequest is used for PATCH /config requests
+// Pointer fields allow distinguishing "not sent" (nil) from "set to empty" ("")
+type UpdateGlobalConfigRequest struct {
+	CronExpr                        *string `json:"cron_expr,omitempty"`
+	RedditRateLimitDelayMs          *int    `json:"reddit_rate_limit_delay_ms,omitempty"`
+	SemanticScholarRateLimitDelayMs *int    `json:"semantic_scholar_rate_limit_delay_ms,omitempty"`
+	RedditClientID                  *string `json:"reddit_client_id,omitempty"`
+	RedditClientSecret              *string `json:"reddit_client_secret,omitempty"`
+	RedditUsername                  *string `json:"reddit_username,omitempty"`
+	RedditPassword                  *string `json:"reddit_password,omitempty"`
+	SemanticScholarAPIKey           *string `json:"semantic_scholar_api_key,omitempty"`
 }
 
 // Validate validates the global configuration

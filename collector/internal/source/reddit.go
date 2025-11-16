@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
 	"github.com/google/uuid"
 	"golang.org/x/time/rate"
@@ -61,11 +60,10 @@ type redditComment struct {
 }
 
 // NewRedditSource creates a new Reddit source
-// Uses global config for rate limits and app config for OAuth credentials
+// Uses global config for credentials (decrypted from DB)
 func NewRedditSource(
 	source *db.Source,
 	globalConfig *db.GlobalConfig,
-	appConfig *config.Config,
 	sharedLimiter *rate.Limiter,
 	maxCommentDepth int,
 ) (*RedditSource, error) {
@@ -82,9 +80,11 @@ func NewRedditSource(
 		maxCommentDepth: maxCommentDepth,
 	}
 
-	// Note: OAuth authentication using appConfig.RedditClientID, etc. can be added here
-	// For now, we keep the anonymous API access pattern
-	_ = appConfig // Will be used for OAuth in future enhancement
+	// OAuth authentication using globalConfig credentials (loaded from encrypted DB)
+	// If credentials are set, use OAuth; otherwise fall back to anonymous access
+	// Implementation note: Reddit OAuth setup would go here
+	// For now, credentials are available in: globalConfig.RedditClientID, RedditClientSecret, RedditUsername, RedditPassword
+	_ = globalConfig // Credentials available but OAuth not yet implemented
 
 	return rs, nil
 }

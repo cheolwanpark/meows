@@ -72,6 +72,11 @@ type UpdateGlobalConfigRequest struct {
 	CronExpr                        *string `json:"cron_expr,omitempty"`
 	RedditRateLimitDelayMs          *int    `json:"reddit_rate_limit_delay_ms,omitempty"`
 	SemanticScholarRateLimitDelayMs *int    `json:"semantic_scholar_rate_limit_delay_ms,omitempty"`
+	RedditClientID                  *string `json:"reddit_client_id,omitempty"`
+	RedditClientSecret              *string `json:"reddit_client_secret,omitempty"`
+	RedditUsername                  *string `json:"reddit_username,omitempty"`
+	RedditPassword                  *string `json:"reddit_password,omitempty"`
+	SemanticScholarAPIKey           *string `json:"semantic_scholar_api_key,omitempty"`
 }
 
 // ErrorResponse represents an error response from the collector

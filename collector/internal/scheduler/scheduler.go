@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
 	"github.com/cheolwanpark/meows/collector/internal/source"
 	"github.com/robfig/cron/v3"
@@ -19,17 +18,16 @@ import (
 type Scheduler struct {
 	cron            *cron.Cron
 	db              *db.DB
-	appConfig       *config.Config
 	maxCommentDepth int
 	mu              sync.RWMutex
-	globalConfig    *db.GlobalConfig
+	globalConfig    *db.GlobalConfigDTO
 	rateLimiters    map[string]*rate.Limiter // Long-lived rate limiters per source type
 	isRunning       bool
 }
 
 // New creates a new Scheduler
-func New(database *db.DB, appConfig *config.Config, maxCommentDepth int) (*Scheduler, error) {
-	// Load global config from database
+func New(database *db.DB, maxCommentDepth int) (*Scheduler, error) {
+	// Load global config from database (without credentials)
 	globalConfig, err := database.GetGlobalConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load global config: %w", err)
@@ -37,7 +35,6 @@ func New(database *db.DB, appConfig *config.Config, maxCommentDepth int) (*Sched
 
 	s := &Scheduler{
 		db:              database,
-		appConfig:       appConfig,
 		maxCommentDepth: maxCommentDepth,
 		globalConfig:    globalConfig,
 	}
@@ -229,7 +226,6 @@ func (s *Scheduler) runSourcesSequentially(sources []*db.Source, limiter *rate.L
 	for _, src := range sources {
 		// Per-source timeout (5 minutes)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel() // Prevent context leak
 
 		log.Printf("Processing source %s (type: %s)", src.ID, src.Type)
 
@@ -246,6 +242,9 @@ func (s *Scheduler) runSourcesSequentially(sources []*db.Source, limiter *rate.L
 			log.Printf("Failed to set source %s to idle: %v", src.ID, err)
 		}
 
+		// Cancel context immediately (don't defer in loop)
+		cancel()
+
 		if err != nil {
 			log.Printf("Source %s failed: %v", src.ID, err)
 			s.recordError(src.ID, err)
@@ -258,13 +257,8 @@ func (s *Scheduler) runSourcesSequentially(sources []*db.Source, limiter *rate.L
 
 // runSourceWithTimeout executes a single source fetch with timeout
 func (s *Scheduler) runSourceWithTimeout(ctx context.Context, src *db.Source, limiter *rate.Limiter) error {
-	// Re-fetch global config (in case it changed during run)
-	s.mu.RLock()
-	globalConfig := s.globalConfig
-	s.mu.RUnlock()
-
-	// Create source instance with global config
-	sourceImpl, err := source.Factory(src, globalConfig, s.appConfig, limiter, s.maxCommentDepth)
+	// Create source instance (Factory loads fresh global config with credentials from DB)
+	sourceImpl, err := source.Factory(src, s.db, limiter, s.maxCommentDepth)
 	if err != nil {
 		return fmt.Errorf("failed to create source: %w", err)
 	}

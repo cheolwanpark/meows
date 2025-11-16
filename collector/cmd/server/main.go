@@ -35,6 +35,16 @@ import (
 // @BasePath /
 // @schemes http
 func main() {
+	// Validate encryption key before starting
+	encKey := os.Getenv("MEOWS_ENCRYPTION_KEY")
+	if encKey == "" {
+		log.Fatal("FATAL: MEOWS_ENCRYPTION_KEY environment variable not set (required for credential encryption)")
+	}
+	if len(encKey) != 32 {
+		log.Fatalf("FATAL: MEOWS_ENCRYPTION_KEY must be exactly 32 bytes for AES-256, got %d bytes", len(encKey))
+	}
+	log.Println("Encryption key validated (32 bytes)")
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -54,12 +64,12 @@ func main() {
 	log.Println("Database initialized")
 
 	// Initialize scheduler with global configuration
-	sched, err := scheduler.New(database, cfg, cfg.MaxCommentDepth)
+	sched, err := scheduler.New(database, cfg.MaxCommentDepth)
 	if err != nil {
 		log.Fatalf("Failed to initialize scheduler: %v", err)
 	}
 
-	// Start scheduler (loads sources dynamically on each run)
+	// Start scheduler (loads sources dynamically, credentials from encrypted DB)
 	sched.Start()
 	log.Println("Scheduler started with global configuration")
 

@@ -35,21 +35,24 @@ services:
     container_name: meows-collector
 
     ports:
-      - "8080:8080"
+      - "${COLLECTOR_PORT:-8080}:8080"
 
     environment:
       # Database configuration
-      - DB_PATH=/data/meows.db
+      - DB_PATH=${DB_PATH:-/data/meows.db}
 
       # Server configuration
       - PORT=8080
-      - LOG_LEVEL=info
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+
+      # Encryption key for credentials (REQUIRED - must be exactly 32 bytes)
+      - MEOWS_ENCRYPTION_KEY=${MEOWS_ENCRYPTION_KEY:?MEOWS_ENCRYPTION_KEY must be set in .env file}
 
       # Enable Swagger documentation UI (development only)
-      - ENABLE_SWAGGER=true
+      - ENABLE_SWAGGER=${ENABLE_SWAGGER:-true}
 
-      # Optional: Set maximum comment depth for Reddit crawling
-      # - MAX_COMMENT_DEPTH=5
+      # Maximum comment depth for Reddit crawling
+      - MAX_COMMENT_DEPTH=${MAX_COMMENT_DEPTH:-5}
 
     volumes:
       # Default: Docker-managed named volume for persistence
@@ -85,20 +88,19 @@ services:
     container_name: meows-frontend
 
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
 
     environment:
       # Server configuration
       - PORT=3000
-      - ENV=production
-      - LOG_LEVEL=info
+      - ENV=${ENV:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
 
       # Collector API connection
-      - COLLECTOR_URL=http://collector:8080
+      - COLLECTOR_URL=${COLLECTOR_URL:-http://collector:8080}
 
-      # Security: CSRF protection key (CHANGE THIS IN PRODUCTION!)
-      # Generate a random 32-character string for production use
-      - CSRF_KEY=${CSRF_KEY:-change-me-in-production-please-use-random-key}
+      # Security: CSRF protection key (REQUIRED)
+      - CSRF_KEY=${CSRF_KEY:?CSRF_KEY must be set in .env file}
 
     depends_on:
       - collector

@@ -788,10 +788,10 @@ func (h *Handler) Metrics(w http.ResponseWriter, r *http.Request) {
 
 // GetGlobalConfig godoc
 // @Summary Get global configuration
-// @Description Returns the global crawl schedule and rate limits that apply to all sources
+// @Description Returns the global crawl schedule and rate limits that apply to all sources (credentials omitted for security)
 // @Tags config
 // @Produce json
-// @Success 200 {object} db.GlobalConfig
+// @Success 200 {object} db.GlobalConfigDTO
 // @Failure 500 {object} ErrorResponse "Database error"
 // @Router /config [get]
 func (h *Handler) GetGlobalConfig(w http.ResponseWriter, r *http.Request) {
@@ -810,12 +810,12 @@ func (h *Handler) GetGlobalConfig(w http.ResponseWriter, r *http.Request) {
 
 // UpdateGlobalConfig godoc
 // @Summary Update global configuration
-// @Description Updates global crawl schedule and rate limits (partial update), then hot-reloads the scheduler
+// @Description Updates global crawl schedule, rate limits, and credentials (partial update), then hot-reloads the scheduler
 // @Tags config
 // @Accept json
 // @Produce json
 // @Param config body UpdateGlobalConfigRequest true "Configuration updates (PATCH-style partial updates)"
-// @Success 200 {object} db.GlobalConfig
+// @Success 200 {object} db.GlobalConfigDTO
 // @Failure 400 {object} ErrorResponse "Invalid request body or validation error"
 // @Failure 500 {object} ErrorResponse "Database or scheduler error"
 // @Router /config [patch]
@@ -827,39 +827,34 @@ func (h *Handler) UpdateGlobalConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get current config
-	config, err := h.db.GetGlobalConfig()
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get current config: %v", err))
-		return
+	// Convert API DTO to DB DTO
+	dbReq := &db.UpdateGlobalConfigRequest{
+		CronExpr:                        req.CronExpr,
+		RedditRateLimitDelayMs:          req.RedditRateLimitDelayMs,
+		SemanticScholarRateLimitDelayMs: req.SemanticScholarRateLimitDelayMs,
+		RedditClientID:                  req.RedditClientID,
+		RedditClientSecret:              req.RedditClientSecret,
+		RedditUsername:                  req.RedditUsername,
+		RedditPassword:                  req.RedditPassword,
+		SemanticScholarAPIKey:           req.SemanticScholarAPIKey,
 	}
 
-	// Apply updates (PATCH-style partial updates)
-	if req.CronExpr != nil {
-		config.CronExpr = *req.CronExpr
-	}
-	if req.RedditRateLimitDelayMs != nil {
-		config.RedditRateLimitDelayMs = *req.RedditRateLimitDelayMs
-	}
-	if req.SemanticScholarRateLimitDelayMs != nil {
-		config.SemanticScholarRateLimitDelayMs = *req.SemanticScholarRateLimitDelayMs
-	}
-
-	// Validate using existing validation
-	if err := config.Validate(); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	// Update database
-	if err := h.db.UpdateGlobalConfig(config); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update config: %v", err))
+	// Update database (validates, encrypts credentials, and updates)
+	if err := h.db.UpdateGlobalConfigPartial(dbReq); err != nil {
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("failed to update config: %v", err))
 		return
 	}
 
 	// Hot-reload scheduler to apply changes immediately
 	if err := h.scheduler.Reload(); err != nil {
 		respondError(w, http.StatusInternalServerError, "Configuration saved but scheduler reload failed. Manual restart may be required.")
+		return
+	}
+
+	// Get updated config (WITHOUT credentials for security)
+	config, err := h.db.GetGlobalConfig()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get updated config: %v", err))
 		return
 	}
 
