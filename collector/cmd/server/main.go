@@ -53,17 +53,15 @@ func main() {
 	defer database.Close()
 	log.Println("Database initialized")
 
-	// Initialize scheduler
-	sched := scheduler.New(database, cfg.MaxCommentDepth)
-
-	// Load sources and register jobs
-	if err := sched.LoadSourcesFromDB(); err != nil {
-		log.Fatalf("Failed to load sources: %v", err)
+	// Initialize scheduler with global configuration
+	sched, err := scheduler.New(database, cfg, cfg.MaxCommentDepth)
+	if err != nil {
+		log.Fatalf("Failed to initialize scheduler: %v", err)
 	}
 
-	// Start scheduler
+	// Start scheduler (loads sources dynamically on each run)
 	sched.Start()
-	log.Println("Scheduler started")
+	log.Println("Scheduler started with global configuration")
 
 	// Setup HTTP router
 	router := api.SetupRouter(database, sched)

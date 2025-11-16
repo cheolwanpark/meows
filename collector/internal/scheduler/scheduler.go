@@ -8,41 +8,78 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
 	"github.com/cheolwanpark/meows/collector/internal/source"
 	"github.com/robfig/cron/v3"
+	"golang.org/x/time/rate"
 )
 
-// Scheduler manages scheduled crawling jobs
+// Scheduler manages scheduled crawling jobs with global configuration
 type Scheduler struct {
 	cron            *cron.Cron
 	db              *db.DB
+	appConfig       *config.Config
 	maxCommentDepth int
-	jobs            map[string]cron.EntryID // sourceID -> cron entry ID
 	mu              sync.RWMutex
+	globalConfig    *db.GlobalConfig
+	rateLimiters    map[string]*rate.Limiter // Long-lived rate limiters per source type
+	isRunning       bool
 }
 
 // New creates a new Scheduler
-func New(database *db.DB, maxCommentDepth int) *Scheduler {
-	c := cron.New(
+func New(database *db.DB, appConfig *config.Config, maxCommentDepth int) (*Scheduler, error) {
+	// Load global config from database
+	globalConfig, err := database.GetGlobalConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load global config: %w", err)
+	}
+
+	s := &Scheduler{
+		db:              database,
+		appConfig:       appConfig,
+		maxCommentDepth: maxCommentDepth,
+		globalConfig:    globalConfig,
+	}
+
+	// Create long-lived rate limiters
+	s.rateLimiters = s.createRateLimiters()
+
+	// Create cron instance (will be populated in Start)
+	if err := s.createCron(); err != nil {
+		return nil, err
+	}
+
+	return s, nil
+}
+
+// createCron creates a new cron instance with the current global config
+func (s *Scheduler) createCron() error {
+	s.cron = cron.New(
 		cron.WithChain(
 			cron.SkipIfStillRunning(cron.DefaultLogger),
 			cron.Recover(cron.DefaultLogger),
 		),
 	)
 
-	return &Scheduler{
-		cron:            c,
-		db:              database,
-		maxCommentDepth: maxCommentDepth,
-		jobs:            make(map[string]cron.EntryID),
+	// Register the single global job
+	_, err := s.cron.AddFunc(s.globalConfig.CronExpr, func() {
+		if err := s.runAllSources(); err != nil {
+			log.Printf("Global crawl job failed: %v", err)
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("failed to register global cron job: %w", err)
 	}
+
+	log.Printf("Registered global cron job with schedule: %s", s.globalConfig.CronExpr)
+	return nil
 }
 
 // Start starts the scheduler
 func (s *Scheduler) Start() {
 	s.cron.Start()
-	log.Println("Scheduler started")
+	log.Println("Scheduler started with global cron schedule")
 }
 
 // Stop stops the scheduler gracefully
@@ -58,26 +95,260 @@ func (s *Scheduler) Stop(ctx context.Context) error {
 	}
 }
 
-// LoadSourcesFromDB loads all sources from the database and registers their jobs
-func (s *Scheduler) LoadSourcesFromDB() error {
-	rows, err := s.db.Query("SELECT id, type, config, cron_expr, external_id, last_run_at, last_success_at, last_error, status, created_at FROM sources")
+// Reload reloads the global configuration and restarts the cron scheduler
+func (s *Scheduler) Reload() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Load updated global config
+	globalConfig, err := s.db.GetGlobalConfig()
 	if err != nil {
-		return fmt.Errorf("failed to query sources: %w", err)
+		return fmt.Errorf("failed to load global config: %w", err)
+	}
+
+	// Stop existing cron
+	stopCtx := s.cron.Stop()
+	<-stopCtx.Done()
+
+	// Update config
+	s.globalConfig = globalConfig
+
+	// Recreate rate limiters with new config
+	s.rateLimiters = s.createRateLimiters()
+
+	// Create new cron with updated schedule
+	if err := s.createCron(); err != nil {
+		return fmt.Errorf("failed to create new cron: %w", err)
+	}
+
+	// Start new cron
+	s.cron.Start()
+
+	log.Printf("Scheduler reloaded with new schedule: %s", s.globalConfig.CronExpr)
+	return nil
+}
+
+// RunNow manually triggers a crawl for all sources
+func (s *Scheduler) RunNow() error {
+	s.mu.Lock()
+	if s.isRunning {
+		s.mu.Unlock()
+		return fmt.Errorf("crawl job is already running")
+	}
+	s.isRunning = true // Set BEFORE unlocking to prevent race
+	s.mu.Unlock()
+
+	// Run in goroutine to return immediately
+	go func() {
+		defer func() {
+			s.mu.Lock()
+			s.isRunning = false
+			s.mu.Unlock()
+		}()
+		if err := s.runAllSources(); err != nil {
+			log.Printf("Manual crawl job failed: %v", err)
+		}
+	}()
+
+	return nil
+}
+
+// runAllSources orchestrates crawling all sources
+// - Groups sources by type
+// - Runs different types in parallel (goroutines)
+// - Runs same-type sources sequentially
+// - Uses shared rate limiter per source type
+func (s *Scheduler) runAllSources() error {
+	s.mu.Lock()
+	if s.isRunning {
+		s.mu.Unlock()
+		log.Println("Crawl job already running, skipping this execution")
+		return nil
+	}
+	s.isRunning = true
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		s.isRunning = false
+		s.mu.Unlock()
+	}()
+
+	log.Println("Starting global crawl job for all sources")
+
+	// Fetch all sources from DB
+	sources, err := s.getAllSources()
+	if err != nil {
+		return fmt.Errorf("failed to fetch sources: %w", err)
+	}
+
+	if len(sources) == 0 {
+		log.Println("No sources configured, skipping crawl")
+		return nil
+	}
+
+	// Group sources by type
+	typeGroups := s.groupSourcesByType(sources)
+
+	// Launch goroutine per source type
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(typeGroups))
+
+	for sourceType, typeSources := range typeGroups {
+		wg.Add(1)
+		go func(typ string, srcs []*db.Source) {
+			defer wg.Done()
+			log.Printf("Starting sequential crawl for %d %s sources", len(srcs), typ)
+			if err := s.runSourcesSequentially(srcs, s.rateLimiters[typ]); err != nil {
+				errChan <- fmt.Errorf("%s sources failed: %w", typ, err)
+			}
+		}(sourceType, typeSources)
+	}
+
+	// Wait for all source types to complete
+	wg.Wait()
+	close(errChan)
+
+	// Aggregate errors
+	var errors []error
+	for err := range errChan {
+		errors = append(errors, err)
+	}
+
+	if len(errors) > 0 {
+		log.Printf("Global crawl job completed with %d errors", len(errors))
+		return fmt.Errorf("%d source type(s) failed", len(errors))
+	}
+
+	log.Println("Global crawl job completed successfully")
+	return nil
+}
+
+// runSourcesSequentially executes sources of the same type one after another
+func (s *Scheduler) runSourcesSequentially(sources []*db.Source, limiter *rate.Limiter) error {
+	for _, src := range sources {
+		// Per-source timeout (5 minutes)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel() // Prevent context leak
+
+		log.Printf("Processing source %s (type: %s)", src.ID, src.Type)
+
+		// Update status to running
+		if err := s.updateSourceStatus(src.ID, "running"); err != nil {
+			log.Printf("Failed to update status for source %s: %v", src.ID, err)
+		}
+
+		// Execute fetch with timeout
+		err := s.runSourceWithTimeout(ctx, src, limiter)
+
+		// Update status back to idle
+		if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
+			log.Printf("Failed to set source %s to idle: %v", src.ID, err)
+		}
+
+		if err != nil {
+			log.Printf("Source %s failed: %v", src.ID, err)
+			s.recordError(src.ID, err)
+			// Continue with next source (don't fail entire type group)
+		}
+	}
+
+	return nil
+}
+
+// runSourceWithTimeout executes a single source fetch with timeout
+func (s *Scheduler) runSourceWithTimeout(ctx context.Context, src *db.Source, limiter *rate.Limiter) error {
+	// Re-fetch global config (in case it changed during run)
+	s.mu.RLock()
+	globalConfig := s.globalConfig
+	s.mu.RUnlock()
+
+	// Create source instance with global config
+	sourceImpl, err := source.Factory(src, globalConfig, s.appConfig, limiter, s.maxCommentDepth)
+	if err != nil {
+		return fmt.Errorf("failed to create source: %w", err)
+	}
+
+	// Determine since time
+	since := time.Unix(0, 0)
+	if src.LastSuccessAt != nil {
+		since = *src.LastSuccessAt
+	}
+
+	// Fetch articles and comments
+	articles, comments, err := sourceImpl.Fetch(ctx, since)
+	if err != nil {
+		return fmt.Errorf("fetch failed: %w", err)
+	}
+
+	// Store results
+	if err := s.storeArticles(articles); err != nil {
+		return fmt.Errorf("failed to store articles: %w", err)
+	}
+
+	if err := s.storeComments(comments); err != nil {
+		return fmt.Errorf("failed to store comments: %w", err)
+	}
+
+	// Update timestamps
+	now := time.Now()
+	_, err = s.db.Exec(
+		"UPDATE sources SET last_run_at = ?, last_success_at = ?, last_error = NULL WHERE id = ?",
+		now, now, src.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update timestamps: %w", err)
+	}
+
+	log.Printf("Source %s completed: %d articles, %d comments", src.ID, len(articles), len(comments))
+	return nil
+}
+
+// createRateLimiters creates rate limiters for each source type based on global config
+func (s *Scheduler) createRateLimiters() map[string]*rate.Limiter {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	limiters := make(map[string]*rate.Limiter)
+
+	// Reddit rate limiter (burst=10 to allow natural bursting within rate limit)
+	redditReqPerSec := 1000.0 / float64(s.globalConfig.RedditRateLimitDelayMs)
+	limiters["reddit"] = rate.NewLimiter(rate.Limit(redditReqPerSec), 10)
+
+	// Semantic Scholar rate limiter (burst=10)
+	s2ReqPerSec := 1000.0 / float64(s.globalConfig.SemanticScholarRateLimitDelayMs)
+	limiters["semantic_scholar"] = rate.NewLimiter(rate.Limit(s2ReqPerSec), 10)
+
+	return limiters
+}
+
+// groupSourcesByType groups sources by their type
+func (s *Scheduler) groupSourcesByType(sources []*db.Source) map[string][]*db.Source {
+	groups := make(map[string][]*db.Source)
+	for _, src := range sources {
+		groups[src.Type] = append(groups[src.Type], src)
+	}
+	return groups
+}
+
+// getAllSources fetches all sources from the database
+func (s *Scheduler) getAllSources() ([]*db.Source, error) {
+	rows, err := s.db.Query("SELECT id, type, config, external_id, last_run_at, last_success_at, last_error, status, created_at FROM sources")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sources: %w", err)
 	}
 	defer rows.Close()
 
-	var count int
+	var sources []*db.Source
 	for rows.Next() {
 		var src db.Source
 		var lastRunAt, lastSuccessAt sql.NullTime
-		var lastError sql.NullString
-		var externalID sql.NullString
+		var lastError, externalID sql.NullString
 
 		err := rows.Scan(
 			&src.ID,
 			&src.Type,
 			&src.Config,
-			&src.CronExpr,
 			&externalID,
 			&lastRunAt,
 			&lastSuccessAt,
@@ -86,7 +357,7 @@ func (s *Scheduler) LoadSourcesFromDB() error {
 			&src.CreatedAt,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to scan source: %w", err)
+			return nil, fmt.Errorf("failed to scan source: %w", err)
 		}
 
 		if externalID.Valid {
@@ -102,170 +373,10 @@ func (s *Scheduler) LoadSourcesFromDB() error {
 			src.LastError = lastError.String
 		}
 
-		if err := s.RegisterJob(&src); err != nil {
-			log.Printf("Warning: failed to register job for source %s: %v", src.ID, err)
-			continue
-		}
-		count++
+		sources = append(sources, &src)
 	}
 
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("error iterating sources: %w", err)
-	}
-
-	log.Printf("Loaded %d sources from database", count)
-	return nil
-}
-
-// RegisterJob registers a cron job for a source
-func (s *Scheduler) RegisterJob(src *db.Source) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Remove existing job if present
-	if entryID, exists := s.jobs[src.ID]; exists {
-		s.cron.Remove(entryID)
-		delete(s.jobs, src.ID)
-	}
-
-	// Parse and validate cron expression
-	_, err := cron.ParseStandard(src.CronExpr)
-	if err != nil {
-		return fmt.Errorf("invalid cron expression '%s': %w", src.CronExpr, err)
-	}
-
-	// Register the job
-	// Capture sourceID to avoid closure issues
-	sourceID := src.ID
-	entryID, err := s.cron.AddFunc(src.CronExpr, func() {
-		if err := s.runJob(sourceID); err != nil {
-			log.Printf("Job failed for source %s: %v", sourceID, err)
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("failed to add cron job: %w", err)
-	}
-
-	s.jobs[src.ID] = entryID
-	log.Printf("Registered job for source %s (type: %s, schedule: %s)", src.ID, src.Type, src.CronExpr)
-	return nil
-}
-
-// UnregisterJob removes a cron job for a source
-func (s *Scheduler) UnregisterJob(sourceID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if entryID, exists := s.jobs[sourceID]; exists {
-		s.cron.Remove(entryID)
-		delete(s.jobs, sourceID)
-		log.Printf("Unregistered job for source %s", sourceID)
-	}
-}
-
-// runJob executes a crawling job for a source
-func (s *Scheduler) runJob(sourceID string) error {
-	ctx := context.Background()
-
-	// Update status to 'running'
-	if err := s.updateSourceStatus(sourceID, "running"); err != nil {
-		return err
-	}
-
-	// Always set status back to 'idle' when done
-	defer func() {
-		if err := s.updateSourceStatus(sourceID, "idle"); err != nil {
-			log.Printf("Failed to set source %s status to idle: %v", sourceID, err)
-		}
-	}()
-
-	// Fetch source from database
-	src, err := s.getSource(sourceID)
-	if err != nil {
-		return s.recordError(sourceID, err)
-	}
-
-	// Create source instance
-	sourceImpl, err := source.Factory(src, s.maxCommentDepth)
-	if err != nil {
-		return s.recordError(sourceID, err)
-	}
-
-	// Determine 'since' time (last successful fetch or epoch)
-	since := time.Unix(0, 0)
-	if src.LastSuccessAt != nil {
-		since = *src.LastSuccessAt
-	}
-
-	// Fetch articles and comments
-	articles, comments, err := sourceImpl.Fetch(ctx, since)
-	if err != nil {
-		return s.recordError(sourceID, err)
-	}
-
-	// Store articles and comments in database
-	if err := s.storeArticles(articles); err != nil {
-		return s.recordError(sourceID, err)
-	}
-
-	if err := s.storeComments(comments); err != nil {
-		return s.recordError(sourceID, err)
-	}
-
-	// Update last_run_at and last_success_at
-	now := time.Now()
-	_, err = s.db.Exec(
-		"UPDATE sources SET last_run_at = ?, last_success_at = ?, last_error = NULL WHERE id = ?",
-		now, now, sourceID,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to update source timestamps: %w", err)
-	}
-
-	log.Printf("Job completed for source %s: fetched %d articles, %d comments", sourceID, len(articles), len(comments))
-	return nil
-}
-
-// getSource retrieves a source from the database
-func (s *Scheduler) getSource(sourceID string) (*db.Source, error) {
-	var src db.Source
-	var lastRunAt, lastSuccessAt sql.NullTime
-	var lastError, externalID sql.NullString
-
-	err := s.db.QueryRow(
-		"SELECT id, type, config, cron_expr, external_id, last_run_at, last_success_at, last_error, status, created_at FROM sources WHERE id = ?",
-		sourceID,
-	).Scan(
-		&src.ID,
-		&src.Type,
-		&src.Config,
-		&src.CronExpr,
-		&externalID,
-		&lastRunAt,
-		&lastSuccessAt,
-		&lastError,
-		&src.Status,
-		&src.CreatedAt,
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch source: %w", err)
-	}
-
-	if externalID.Valid {
-		src.ExternalID = externalID.String
-	}
-	if lastRunAt.Valid {
-		src.LastRunAt = &lastRunAt.Time
-	}
-	if lastSuccessAt.Valid {
-		src.LastSuccessAt = &lastSuccessAt.Time
-	}
-	if lastError.Valid {
-		src.LastError = lastError.String
-	}
-
-	return &src, nil
+	return sources, rows.Err()
 }
 
 // updateSourceStatus updates the status of a source
@@ -278,7 +389,7 @@ func (s *Scheduler) updateSourceStatus(sourceID, status string) error {
 }
 
 // recordError records an error for a source
-func (s *Scheduler) recordError(sourceID string, err error) error {
+func (s *Scheduler) recordError(sourceID string, err error) {
 	now := time.Now()
 	_, dbErr := s.db.Exec(
 		"UPDATE sources SET last_run_at = ?, last_error = ? WHERE id = ?",
@@ -287,7 +398,6 @@ func (s *Scheduler) recordError(sourceID string, err error) error {
 	if dbErr != nil {
 		log.Printf("Failed to record error for source %s: %v", sourceID, dbErr)
 	}
-	return err
 }
 
 // storeArticles stores articles in the database using UPSERT
@@ -376,63 +486,41 @@ func (s *Scheduler) storeComments(comments []db.Comment) error {
 	return tx.Commit()
 }
 
-// GetSchedule returns scheduled jobs for the next duration
-func (s *Scheduler) GetSchedule(duration time.Duration) ([]db.ScheduleEntry, error) {
-	now := time.Now()
-	cutoff := now.Add(duration)
+// GetSchedule returns the global schedule information
+func (s *Scheduler) GetSchedule() (*db.ScheduleEntry, error) {
+	s.mu.RLock()
+	globalConfig := s.globalConfig
+	s.mu.RUnlock()
 
-	rows, err := s.db.Query(`
-		SELECT id, type, cron_expr, last_run_at
-		FROM sources
-		WHERE status != 'running'
-	`)
+	// Parse cron expression
+	sched, err := cron.ParseStandard(globalConfig.CronExpr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query sources: %w", err)
-	}
-	defer rows.Close()
-
-	var schedule []db.ScheduleEntry
-
-	for rows.Next() {
-		var id, sourceType, cronExpr string
-		var lastRunAt sql.NullTime
-
-		if err := rows.Scan(&id, &sourceType, &cronExpr, &lastRunAt); err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
-		}
-
-		// Parse cron expression
-		sched, err := cron.ParseStandard(cronExpr)
-		if err != nil {
-			log.Printf("Warning: invalid cron expression for source %s: %v", id, err)
-			continue
-		}
-
-		// Calculate next run time
-		var nextRun time.Time
-		if lastRunAt.Valid {
-			nextRun = sched.Next(lastRunAt.Time)
-		} else {
-			nextRun = sched.Next(now)
-		}
-
-		// Include if within duration
-		if nextRun.Before(cutoff) {
-			entry := db.ScheduleEntry{
-				SourceID:   id,
-				SourceType: sourceType,
-				NextRun:    nextRun,
-			}
-			if lastRunAt.Valid {
-				entry.LastRunAt = &lastRunAt.Time
-			}
-			schedule = append(schedule, entry)
-		}
+		return nil, fmt.Errorf("invalid cron expression: %w", err)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating rows: %w", err)
+	// Get the latest last_run_at from all sources
+	var lastRunAt sql.NullTime
+	err = s.db.QueryRow("SELECT MAX(last_run_at) FROM sources").Scan(&lastRunAt)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to get last run time: %w", err)
 	}
 
-	return schedule, nil
+	// Calculate next run
+	var nextRun time.Time
+	if lastRunAt.Valid {
+		nextRun = sched.Next(lastRunAt.Time)
+	} else {
+		nextRun = sched.Next(time.Now())
+	}
+
+	entry := &db.ScheduleEntry{
+		SourceID:   "global",
+		SourceType: "all",
+		NextRun:    nextRun,
+	}
+	if lastRunAt.Valid {
+		entry.LastRunAt = &lastRunAt.Time
+	}
+
+	return entry, nil
 }

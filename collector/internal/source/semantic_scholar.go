@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
 	"github.com/google/uuid"
 	"golang.org/x/time/rate"
@@ -21,6 +22,7 @@ type SemanticScholarSource struct {
 	config  *db.SemanticScholarConfig
 	client  *http.Client
 	limiter *rate.Limiter
+	apiKey  string // From global config (environment variable)
 }
 
 // Semantic Scholar API response structures
@@ -51,26 +53,24 @@ type s2Author struct {
 }
 
 // NewSemanticScholarSource creates a new Semantic Scholar source
-func NewSemanticScholarSource(source *db.Source) (*SemanticScholarSource, error) {
+// Uses global config for rate limits and app config for API key
+func NewSemanticScholarSource(
+	source *db.Source,
+	globalConfig *db.GlobalConfig,
+	appConfig *config.Config,
+	sharedLimiter *rate.Limiter,
+) (*SemanticScholarSource, error) {
 	var config db.SemanticScholarConfig
 	if err := json.Unmarshal(source.Config, &config); err != nil {
 		return nil, fmt.Errorf("invalid semantic scholar config: %w", err)
-	}
-
-	// Calculate rate limit
-	reqPerSecond := 1.0 // Default: 1 req/s without API key
-	if config.APIKey != "" {
-		reqPerSecond = 100.0 / 60.0 // With API key: 100 req/min
-	}
-	if config.RateLimitDelayMs > 0 {
-		reqPerSecond = 1000.0 / float64(config.RateLimitDelayMs)
 	}
 
 	ss := &SemanticScholarSource{
 		source:  source,
 		config:  &config,
 		client:  &http.Client{Timeout: 30 * time.Second},
-		limiter: rate.NewLimiter(rate.Limit(reqPerSecond), 1),
+		limiter: sharedLimiter,                   // Use shared rate limiter per source type
+		apiKey:  appConfig.SemanticScholarAPIKey, // Use API key from environment
 	}
 
 	return ss, nil
@@ -176,8 +176,8 @@ func (s *SemanticScholarSource) fetchSearch(ctx context.Context) ([]s2Paper, err
 			return nil, err
 		}
 
-		if s.config.APIKey != "" {
-			req.Header.Set("x-api-key", s.config.APIKey)
+		if s.apiKey != "" {
+			req.Header.Set("x-api-key", s.apiKey)
 		}
 
 		resp, err := s.client.Do(req)
@@ -251,8 +251,8 @@ func (s *SemanticScholarSource) fetchRecommendations(ctx context.Context) ([]s2P
 		return nil, err
 	}
 
-	if s.config.APIKey != "" {
-		req.Header.Set("x-api-key", s.config.APIKey)
+	if s.apiKey != "" {
+		req.Header.Set("x-api-key", s.apiKey)
 	}
 
 	resp, err := s.client.Do(req)

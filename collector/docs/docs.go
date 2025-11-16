@@ -83,6 +83,126 @@ const docTemplate = `{
                 }
             }
         },
+        "/articles/{id}": {
+            "get": {
+                "description": "Get a specific article by ID with all its comments in nested tree structure",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "articles"
+                ],
+                "summary": "Get article detail with comments",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Article ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ArticleDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid article ID format",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Article not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/config": {
+            "get": {
+                "description": "Returns the global crawl schedule and rate limits that apply to all sources",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Get global configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_cheolwanpark_meows_collector_internal_db.GlobalConfig"
+                        }
+                    },
+                    "500": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Updates global crawl schedule and rate limits (partial update), then hot-reloads the scheduler",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Update global configuration",
+                "parameters": [
+                    {
+                        "description": "Configuration updates (PATCH-style partial updates)",
+                        "name": "config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.UpdateGlobalConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_cheolwanpark_meows_collector_internal_db.GlobalConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Database or scheduler error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "description": "Check the health status of the service (database and scheduler)",
@@ -143,7 +263,7 @@ const docTemplate = `{
         },
         "/schedule": {
             "get": {
-                "description": "Returns all crawl jobs scheduled to run in the next 24 hours",
+                "description": "Returns the global crawl schedule (applies to all sources)",
                 "consumes": [
                     "application/json"
                 ],
@@ -153,15 +273,12 @@ const docTemplate = `{
                 "tags": [
                     "schedule"
                 ],
-                "summary": "Get upcoming scheduled jobs",
+                "summary": "Get global schedule information",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_cheolwanpark_meows_collector_internal_db.ScheduleEntry"
-                            }
+                            "$ref": "#/definitions/github_com_cheolwanpark_meows_collector_internal_db.ScheduleEntry"
                         }
                     },
                     "500": {
@@ -217,7 +334,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Add a new source with cron schedule for Reddit or Semantic Scholar",
+                "description": "Add a new source for Reddit or Semantic Scholar (schedule is global)",
                 "consumes": [
                     "application/json"
                 ],
@@ -247,7 +364,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid request body, type, cron expression, or config",
+                        "description": "Invalid request body, type, or config",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
@@ -259,7 +376,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Database or scheduler error",
+                        "description": "Database error",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
@@ -311,7 +428,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Update source configuration and/or cron schedule. Jobs are automatically rescheduled.",
+                "description": "Update source configuration. Schedule is global and managed separately.",
                 "consumes": [
                     "application/json"
                 ],
@@ -348,7 +465,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid request body, config, or cron expression",
+                        "description": "Invalid request body or config",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
@@ -360,7 +477,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Database or scheduler error",
+                        "description": "Database error",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
@@ -516,6 +633,57 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_cheolwanpark_meows_collector_internal_db.Comment": {
+            "type": "object",
+            "properties": {
+                "article_id": {
+                    "type": "string"
+                },
+                "author": {
+                    "type": "string"
+                },
+                "content": {
+                    "type": "string"
+                },
+                "depth": {
+                    "description": "Reddit comment depth",
+                    "type": "integer"
+                },
+                "external_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "description": "NULL for top-level",
+                    "type": "string"
+                },
+                "written_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_cheolwanpark_meows_collector_internal_db.GlobalConfig": {
+            "type": "object",
+            "properties": {
+                "cron_expr": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "reddit_rate_limit_delay_ms": {
+                    "type": "integer"
+                },
+                "semantic_scholar_rate_limit_delay_ms": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_cheolwanpark_meows_collector_internal_db.HealthStatus": {
             "description": "Service health status",
             "type": "object",
@@ -598,6 +766,24 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.ArticleDetailResponse": {
+            "type": "object",
+            "properties": {
+                "article": {
+                    "$ref": "#/definitions/github_com_cheolwanpark_meows_collector_internal_db.Article"
+                },
+                "comments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_cheolwanpark_meows_collector_internal_db.Comment"
+                    }
+                },
+                "source_type": {
+                    "description": "\"reddit\" or \"semantic_scholar\"",
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.CreateSourceRequest": {
             "description": "Request body for creating a new crawling source",
             "type": "object",
@@ -607,10 +793,6 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
-                },
-                "cron_expr": {
-                    "type": "string",
-                    "example": "0 */6 * * *"
                 },
                 "type": {
                     "type": "string",
@@ -638,15 +820,11 @@ const docTemplate = `{
             "properties": {
                 "config_summary": {
                     "type": "string",
-                    "example": "subreddit: golang, sort: hot, limit: 100, oauth: yes"
+                    "example": "subreddit: golang, sort: hot, limit: 100"
                 },
                 "created_at": {
                     "type": "string",
                     "example": "2024-11-15T10:00:00Z"
-                },
-                "cron_expr": {
-                    "type": "string",
-                    "example": "0 */6 * * *"
                 },
                 "external_id": {
                     "type": "string",
@@ -686,6 +864,24 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.UpdateGlobalConfigRequest": {
+            "description": "Request body for updating global configuration (PATCH-style partial updates)",
+            "type": "object",
+            "properties": {
+                "cron_expr": {
+                    "type": "string",
+                    "example": "0 */6 * * *"
+                },
+                "reddit_rate_limit_delay_ms": {
+                    "type": "integer",
+                    "example": 2000
+                },
+                "semantic_scholar_rate_limit_delay_ms": {
+                    "type": "integer",
+                    "example": 1000
+                }
+            }
+        },
         "internal_api.UpdateSourceRequest": {
             "description": "Request body for updating an existing source",
             "type": "object",
@@ -695,10 +891,6 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
-                },
-                "cron_expr": {
-                    "type": "string",
-                    "example": "0 */12 * * *"
                 }
             }
         }

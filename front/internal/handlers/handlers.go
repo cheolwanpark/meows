@@ -13,7 +13,6 @@ import (
 	"github.com/cheolwanpark/meows/front/templates/layouts"
 	"github.com/cheolwanpark/meows/front/templates/pages"
 	"github.com/go-chi/chi/v5"
-	"github.com/robfig/cron/v3"
 )
 
 // Handler holds dependencies for HTTP handlers
@@ -204,7 +203,6 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sourceType := r.FormValue("source_type")
-	cronExpr := r.FormValue("cron")
 
 	// Validate inputs
 	errors := models.FormErrors{}
@@ -214,15 +212,6 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		errors.General = "Source type is required"
 	} else if sourceType != "reddit" && sourceType != "semantic_scholar" {
 		errors.General = "Invalid source type. Must be 'reddit' or 'semantic_scholar'"
-	}
-
-	// Validate cron expression
-	if cronExpr == "" {
-		errors.Cron = "Cron expression is required"
-	} else {
-		if _, err := cron.ParseStandard(cronExpr); err != nil {
-			errors.Cron = "Invalid cron expression format"
-		}
 	}
 
 	// Build config based on source type
@@ -266,7 +255,6 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		csrfToken := h.csrf.GetToken(r)
 		component := components.AddSourceForm(csrfToken, errors, map[string]string{
 			"source_type": sourceType,
-			"cron":        cronExpr,
 		})
 		component.Render(r.Context(), w)
 		return
@@ -274,9 +262,8 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 
 	// Create source via collector
 	createReq := collector.CreateSourceRequest{
-		Type:     sourceType,
-		Config:   configJSON,
-		CronExpr: cronExpr,
+		Type:   sourceType,
+		Config: configJSON,
 	}
 
 	source, err := h.collector.CreateSource(ctx, createReq)

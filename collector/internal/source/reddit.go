@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
 	"github.com/google/uuid"
 	"golang.org/x/time/rate"
@@ -60,25 +61,30 @@ type redditComment struct {
 }
 
 // NewRedditSource creates a new Reddit source
-func NewRedditSource(source *db.Source, maxCommentDepth int) (*RedditSource, error) {
+// Uses global config for rate limits and app config for OAuth credentials
+func NewRedditSource(
+	source *db.Source,
+	globalConfig *db.GlobalConfig,
+	appConfig *config.Config,
+	sharedLimiter *rate.Limiter,
+	maxCommentDepth int,
+) (*RedditSource, error) {
 	var config db.RedditConfig
 	if err := json.Unmarshal(source.Config, &config); err != nil {
 		return nil, fmt.Errorf("invalid reddit config: %w", err)
-	}
-
-	// Calculate rate limit (requests per second)
-	reqPerSecond := 1.0
-	if config.RateLimitDelayMs > 0 {
-		reqPerSecond = 1000.0 / float64(config.RateLimitDelayMs)
 	}
 
 	rs := &RedditSource{
 		source:          source,
 		config:          &config,
 		client:          &http.Client{Timeout: 30 * time.Second},
-		limiter:         rate.NewLimiter(rate.Limit(reqPerSecond), 1),
+		limiter:         sharedLimiter, // Use shared rate limiter per source type
 		maxCommentDepth: maxCommentDepth,
 	}
+
+	// Note: OAuth authentication using appConfig.RedditClientID, etc. can be added here
+	// For now, we keep the anonymous API access pattern
+	_ = appConfig // Will be used for OAuth in future enhancement
 
 	return rs, nil
 }

@@ -41,24 +41,37 @@ type Article struct {
 
 // Source represents a crawling source from the collector
 type Source struct {
-	ID            string          `json:"id"`
-	Type          string          `json:"type"`
-	Config        json.RawMessage `json:"config"`
-	ConfigSummary string          `json:"config_summary"`
-	CronExpr      string          `json:"cron_expr"`
-	ExternalID    string          `json:"external_id"`
-	LastRunAt     *time.Time      `json:"last_run_at,omitempty"`
-	LastSuccessAt *time.Time      `json:"last_success_at,omitempty"`
-	LastError     string          `json:"last_error,omitempty"`
-	Status        string          `json:"status"`
-	CreatedAt     time.Time       `json:"created_at"`
+	ID            string     `json:"id"`
+	Type          string     `json:"type"`
+	ConfigSummary string     `json:"config_summary"`
+	ExternalID    string     `json:"external_id"`
+	LastRunAt     *time.Time `json:"last_run_at,omitempty"`
+	LastSuccessAt *time.Time `json:"last_success_at,omitempty"`
+	LastError     string     `json:"last_error,omitempty"`
+	Status        string     `json:"status"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 // CreateSourceRequest represents a request to create a new source
 type CreateSourceRequest struct {
-	Type     string          `json:"type"`
-	Config   json.RawMessage `json:"config"`
-	CronExpr string          `json:"cron_expr"`
+	Type   string          `json:"type"`
+	Config json.RawMessage `json:"config"`
+}
+
+// GlobalConfig represents the global configuration from the collector
+type GlobalConfig struct {
+	ID                              int       `json:"id"`
+	CronExpr                        string    `json:"cron_expr"`
+	RedditRateLimitDelayMs          int       `json:"reddit_rate_limit_delay_ms"`
+	SemanticScholarRateLimitDelayMs int       `json:"semantic_scholar_rate_limit_delay_ms"`
+	UpdatedAt                       time.Time `json:"updated_at"`
+}
+
+// UpdateGlobalConfigRequest represents a request to update global configuration (PATCH-style)
+type UpdateGlobalConfigRequest struct {
+	CronExpr                        *string `json:"cron_expr,omitempty"`
+	RedditRateLimitDelayMs          *int    `json:"reddit_rate_limit_delay_ms,omitempty"`
+	SemanticScholarRateLimitDelayMs *int    `json:"semantic_scholar_rate_limit_delay_ms,omitempty"`
 }
 
 // ErrorResponse represents an error response from the collector
@@ -223,6 +236,66 @@ func (c *Client) GetArticle(ctx context.Context, id string) (*ArticleDetail, err
 	}
 
 	return &detail, nil
+}
+
+// GetConfig fetches the global configuration from the collector
+func (c *Client) GetConfig(ctx context.Context) (*GlobalConfig, error) {
+	url := fmt.Sprintf("%s/config", c.baseURL)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.parseError(resp)
+	}
+
+	var config GlobalConfig
+	if err := json.NewDecoder(resp.Body).Decode(&config); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return &config, nil
+}
+
+// UpdateConfig updates the global configuration in the collector (PATCH-style partial update)
+func (c *Client) UpdateConfig(ctx context.Context, req UpdateGlobalConfigRequest) (*GlobalConfig, error) {
+	url := fmt.Sprintf("%s/config", c.baseURL)
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "PATCH", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.parseError(resp)
+	}
+
+	var updatedConfig GlobalConfig
+	if err := json.NewDecoder(resp.Body).Decode(&updatedConfig); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return &updatedConfig, nil
 }
 
 // parseError parses an error response from the collector

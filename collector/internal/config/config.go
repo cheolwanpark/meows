@@ -19,6 +19,15 @@ type Config struct {
 
 	// Logging
 	LogLevel string
+
+	// Reddit OAuth credentials (optional - sources work without authentication)
+	RedditClientID     string
+	RedditClientSecret string
+	RedditUsername     string
+	RedditPassword     string
+
+	// Semantic Scholar API Key (optional - without key, limited to 1 req/sec)
+	SemanticScholarAPIKey string
 }
 
 // Load reads configuration from environment variables with sensible defaults
@@ -28,6 +37,15 @@ func Load() (*Config, error) {
 		Port:            getEnvInt("PORT", 8080),
 		MaxCommentDepth: getEnvInt("MAX_COMMENT_DEPTH", 5),
 		LogLevel:        getEnv("LOG_LEVEL", "info"),
+
+		// Reddit OAuth credentials (optional)
+		RedditClientID:     getEnv("REDDIT_CLIENT_ID", ""),
+		RedditClientSecret: getEnv("REDDIT_CLIENT_SECRET", ""),
+		RedditUsername:     getEnv("REDDIT_USERNAME", ""),
+		RedditPassword:     getEnv("REDDIT_PASSWORD", ""),
+
+		// Semantic Scholar API Key (optional)
+		SemanticScholarAPIKey: getEnv("SEMANTIC_SCHOLAR_API_KEY", ""),
 	}
 
 	// Validate configuration

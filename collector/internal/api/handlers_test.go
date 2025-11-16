@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/cheolwanpark/meows/collector/internal/db"
@@ -126,5 +127,97 @@ func TestDeleteSourceByTypeAndExternalID_Success(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("Expected source to be deleted, but found %d rows", count)
+	}
+}
+
+func TestGetGlobalConfig(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	sched := scheduler.New(database, 5)
+	router := SetupRouter(database, sched)
+
+	req := httptest.NewRequest("GET", "/config", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	// Verify response contains expected fields
+	body := w.Body.String()
+	if !strings.Contains(body, "cron_expr") {
+		t.Errorf("Expected response to contain 'cron_expr', got: %s", body)
+	}
+}
+
+func TestUpdateGlobalConfig_Valid(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	sched := scheduler.New(database, 5)
+	router := SetupRouter(database, sched)
+
+	// Test valid update
+	reqBody := `{"cron_expr":"0 */12 * * *","reddit_rate_limit_delay_ms":3000}`
+	req := httptest.NewRequest("PATCH", "/config", strings.NewReader(reqBody))
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	// Verify config was updated in database
+	config, err := database.GetGlobalConfig()
+	if err != nil {
+		t.Fatalf("Failed to get global config: %v", err)
+	}
+	if config.CronExpr != "0 */12 * * *" {
+		t.Errorf("Expected cron_expr to be '0 */12 * * *', got '%s'", config.CronExpr)
+	}
+	if config.RedditRateLimitDelayMs != 3000 {
+		t.Errorf("Expected reddit rate limit to be 3000, got %d", config.RedditRateLimitDelayMs)
+	}
+}
+
+func TestUpdateGlobalConfig_InvalidCron(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	sched := scheduler.New(database, 5)
+	router := SetupRouter(database, sched)
+
+	// Test invalid cron expression
+	reqBody := `{"cron_expr":"invalid cron"}`
+	req := httptest.NewRequest("PATCH", "/config", strings.NewReader(reqBody))
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got %d. Body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateGlobalConfig_InvalidRateLimit(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	sched := scheduler.New(database, 5)
+	router := SetupRouter(database, sched)
+
+	// Test negative rate limit
+	reqBody := `{"reddit_rate_limit_delay_ms":-100}`
+	req := httptest.NewRequest("PATCH", "/config", strings.NewReader(reqBody))
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got %d. Body: %s", w.Code, w.Body.String())
 	}
 }

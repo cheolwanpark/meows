@@ -50,12 +50,23 @@ func (db *DB) createSchema() error {
 	PRAGMA journal_mode=WAL;
 	PRAGMA busy_timeout=5000;
 
-	-- Sources table
+	-- Global configuration table (singleton)
+	CREATE TABLE IF NOT EXISTS global_config (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		cron_expr TEXT NOT NULL DEFAULT '0 */6 * * *',
+		reddit_rate_limit_delay_ms INTEGER NOT NULL DEFAULT 2000,
+		semantic_scholar_rate_limit_delay_ms INTEGER NOT NULL DEFAULT 1000,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	-- Insert default configuration if not exists
+	INSERT OR IGNORE INTO global_config (id) VALUES (1);
+
+	-- Sources table (no cron_expr, no credentials in config)
 	CREATE TABLE IF NOT EXISTS sources (
 		id TEXT PRIMARY KEY,
 		type TEXT NOT NULL,
 		config TEXT NOT NULL,
-		cron_expr TEXT NOT NULL,
 		external_id TEXT,
 		last_run_at DATETIME,
 		last_success_at DATETIME,
@@ -110,4 +121,49 @@ func (db *DB) createSchema() error {
 // Close closes the database connection
 func (db *DB) Close() error {
 	return db.DB.Close()
+}
+
+// GetGlobalConfig retrieves the global configuration
+func (db *DB) GetGlobalConfig() (*GlobalConfig, error) {
+	var config GlobalConfig
+	err := db.QueryRow(`
+		SELECT id, cron_expr, reddit_rate_limit_delay_ms,
+		       semantic_scholar_rate_limit_delay_ms, updated_at
+		FROM global_config WHERE id = 1
+	`).Scan(
+		&config.ID,
+		&config.CronExpr,
+		&config.RedditRateLimitDelayMs,
+		&config.SemanticScholarRateLimitDelayMs,
+		&config.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get global config: %w", err)
+	}
+	return &config, nil
+}
+
+// UpdateGlobalConfig updates the global configuration
+func (db *DB) UpdateGlobalConfig(config *GlobalConfig) error {
+	// Validate before updating
+	if err := config.Validate(); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	_, err := db.Exec(`
+		UPDATE global_config
+		SET cron_expr = ?,
+		    reddit_rate_limit_delay_ms = ?,
+		    semantic_scholar_rate_limit_delay_ms = ?,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = 1
+	`,
+		config.CronExpr,
+		config.RedditRateLimitDelayMs,
+		config.SemanticScholarRateLimitDelayMs,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update global config: %w", err)
+	}
+	return nil
 }

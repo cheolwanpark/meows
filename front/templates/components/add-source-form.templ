@@ -167,25 +167,11 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 			<p class="text-xs text-muted-foreground mt-1">Semantic Scholar paper ID to get recommendations for</p>
 		</div>
 
-		<!-- Cron Expression (Always visible) -->
-		<div>
-			<label for="cron" class="block text-sm font-medium text-foreground mb-1.5">
-				Schedule (Cron Expression) <span class="text-destructive">*</span>
-			</label>
-			<input
-				type="text"
-				id="cron"
-				name="cron"
-				value={ values["cron"] }
-				placeholder="0 */6 * * * (every 6 hours)"
-				class={ templ.KV("w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent", true),
-					templ.KV("border-destructive", errors.Cron != "") }
-			/>
-			if errors.Cron != "" {
-				<p class="text-xs text-destructive mt-1">{ errors.Cron }</p>
-			}
-			<p class="text-xs text-muted-foreground mt-1">
-				Examples: "0 */6 * * *" (every 6 hours), "0 0 * * *" (daily at midnight)
+		<!-- Global Schedule Info -->
+		<div class="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md p-3">
+			<p class="text-sm text-blue-800 dark:text-blue-200">
+				ℹ️ All sources use a global crawling schedule.
+				<a href="/config" class="underline font-medium hover:text-blue-900 dark:hover:text-blue-100">Manage global schedule</a>
 			</p>
 		</div>
 

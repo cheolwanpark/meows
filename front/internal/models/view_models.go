@@ -64,7 +64,6 @@ type Source struct {
 	URL           string
 	Category      string
 	CategoryEmoji string
-	CronExpr      string
 	Status        string
 	LastRunAt     *time.Time
 	LastRunAgo    string
@@ -77,7 +76,6 @@ func FromCollectorSource(s collector.Source) Source {
 	source := Source{
 		ID:        s.ID,
 		Type:      s.Type,
-		CronExpr:  s.CronExpr,
 		Status:    s.Status,
 		LastRunAt: s.LastRunAt,
 		LastError: s.LastError,
@@ -138,11 +136,10 @@ type FormErrors struct {
 	Name     string
 	URL      string
 	Category string
-	Cron     string
 	General  string
 }
 
 // HasErrors returns true if there are any validation errors
 func (f FormErrors) HasErrors() bool {
-	return f.Name != "" || f.URL != "" || f.Category != "" || f.Cron != "" || f.General != ""
+	return f.Name != "" || f.URL != "" || f.Category != "" || f.General != ""
 }

@@ -13,7 +13,6 @@ import (
 	"github.com/cheolwanpark/meows/collector/internal/scheduler"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/robfig/cron/v3"
 )
 
 // Handler holds dependencies for HTTP handlers
@@ -32,22 +31,18 @@ func NewHandler(database *db.DB, sched *scheduler.Scheduler) *Handler {
 
 // CreateSource godoc
 // @Summary Create a new crawling source
-// @Description Add a new source with cron schedule for Reddit or Semantic Scholar
+// @Description Add a new source for Reddit or Semantic Scholar (schedule is global)
 // @Tags sources
 // @Accept json
 // @Produce json
 // @Param source body CreateSourceRequest true "Source configuration"
 // @Success 201 {object} SourceResponse
-// @Failure 400 {object} ErrorResponse "Invalid request body, type, cron expression, or config"
+// @Failure 400 {object} ErrorResponse "Invalid request body, type, or config"
 // @Failure 409 {object} ErrorResponse "Source with this configuration already exists"
-// @Failure 500 {object} ErrorResponse "Database or scheduler error"
+// @Failure 500 {object} ErrorResponse "Database error"
 // @Router /sources [post]
 func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Type     string          `json:"type"`
-		Config   json.RawMessage `json:"config"`
-		CronExpr string          `json:"cron_expr"`
-	}
+	var req CreateSourceRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body")
@@ -57,12 +52,6 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 	// Validate type
 	if req.Type != "reddit" && req.Type != "semantic_scholar" {
 		respondError(w, http.StatusBadRequest, "type must be 'reddit' or 'semantic_scholar'")
-		return
-	}
-
-	// Validate cron expression
-	if _, err := cron.ParseStandard(req.CronExpr); err != nil {
-		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid cron expression: %v", err))
 		return
 	}
 
@@ -78,7 +67,6 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		ID:         uuid.New().String(),
 		Type:       req.Type,
 		Config:     req.Config,
-		CronExpr:   req.CronExpr,
 		ExternalID: externalID,
 		Status:     "idle",
 		CreatedAt:  time.Now(),
@@ -86,9 +74,9 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 
 	// Insert into database
 	_, err = h.db.Exec(`
-		INSERT INTO sources (id, type, config, cron_expr, external_id, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, source.ID, source.Type, source.Config, source.CronExpr, source.ExternalID, source.Status, source.CreatedAt)
+		INSERT INTO sources (id, type, config, external_id, status, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, source.ID, source.Type, source.Config, source.ExternalID, source.Status, source.CreatedAt)
 
 	if err != nil {
 		// Check for unique constraint violation
@@ -100,13 +88,7 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Register job in scheduler
-	if err := h.scheduler.RegisterJob(source); err != nil {
-		// Rollback: delete the source
-		h.db.Exec("DELETE FROM sources WHERE id = ?", source.ID)
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to register job: %v", err))
-		return
-	}
+	// No need to register job - scheduler runs all sources on global schedule
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(toSourceResponse(source))
@@ -125,7 +107,7 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListSources(w http.ResponseWriter, r *http.Request) {
 	sourceType := r.URL.Query().Get("type")
 
-	query := "SELECT id, type, config, cron_expr, external_id, last_run_at, last_success_at, last_error, status, created_at FROM sources"
+	query := "SELECT id, type, config, external_id, last_run_at, last_success_at, last_error, status, created_at FROM sources"
 	args := []interface{}{}
 
 	if sourceType != "" {
@@ -152,7 +134,6 @@ func (h *Handler) ListSources(w http.ResponseWriter, r *http.Request) {
 			&src.ID,
 			&src.Type,
 			&src.Config,
-			&src.CronExpr,
 			&externalID,
 			&lastRunAt,
 			&lastSuccessAt,
@@ -208,13 +189,12 @@ func (h *Handler) GetSource(w http.ResponseWriter, r *http.Request) {
 	var lastError, externalID sql.NullString
 
 	err := h.db.QueryRow(`
-		SELECT id, type, config, cron_expr, external_id, last_run_at, last_success_at, last_error, status, created_at
+		SELECT id, type, config, external_id, last_run_at, last_success_at, last_error, status, created_at
 		FROM sources WHERE id = ?
 	`, id).Scan(
 		&src.ID,
 		&src.Type,
 		&src.Config,
-		&src.CronExpr,
 		&externalID,
 		&lastRunAt,
 		&lastSuccessAt,
@@ -250,24 +230,21 @@ func (h *Handler) GetSource(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSource godoc
 // @Summary Update a source
-// @Description Update source configuration and/or cron schedule. Jobs are automatically rescheduled.
+// @Description Update source configuration. Schedule is global and managed separately.
 // @Tags sources
 // @Accept json
 // @Produce json
 // @Param id path string true "Source ID (UUID)"
 // @Param source body UpdateSourceRequest true "Updated source configuration"
 // @Success 200 {object} SourceResponse
-// @Failure 400 {object} ErrorResponse "Invalid request body, config, or cron expression"
+// @Failure 400 {object} ErrorResponse "Invalid request body or config"
 // @Failure 404 {object} ErrorResponse "Source not found"
-// @Failure 500 {object} ErrorResponse "Database or scheduler error"
+// @Failure 500 {object} ErrorResponse "Database error"
 // @Router /sources/{id} [put]
 func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	var req struct {
-		Config   *json.RawMessage `json:"config,omitempty"`
-		CronExpr *string          `json:"cron_expr,omitempty"`
-	}
+	var req UpdateSourceRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body")
@@ -279,8 +256,8 @@ func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 	var lastRunAt, lastSuccessAt sql.NullTime
 	var lastError, externalID sql.NullString
 
-	err := h.db.QueryRow("SELECT id, type, config, cron_expr, external_id, last_run_at, last_success_at, last_error, status, created_at FROM sources WHERE id = ?", id).
-		Scan(&src.ID, &src.Type, &src.Config, &src.CronExpr, &externalID, &lastRunAt, &lastSuccessAt, &lastError, &src.Status, &src.CreatedAt)
+	err := h.db.QueryRow("SELECT id, type, config, external_id, last_run_at, last_success_at, last_error, status, created_at FROM sources WHERE id = ?", id).
+		Scan(&src.ID, &src.Type, &src.Config, &externalID, &lastRunAt, &lastSuccessAt, &lastError, &src.Status, &src.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		respondError(w, http.StatusNotFound, "source not found")
@@ -305,7 +282,7 @@ func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 		src.LastError = lastError.String
 	}
 
-	// Update fields
+	// Update config
 	if req.Config != nil {
 		// Validate new config
 		newExternalID, err := extractExternalID(src.Type, *req.Config)
@@ -316,30 +293,18 @@ func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 		src.Config = *req.Config
 		src.ExternalID = newExternalID
 	}
-	if req.CronExpr != nil {
-		// Validate cron expression
-		if _, err := cron.ParseStandard(*req.CronExpr); err != nil {
-			respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid cron expression: %v", err))
-			return
-		}
-		src.CronExpr = *req.CronExpr
-	}
 
 	// Update database
 	_, err = h.db.Exec(`
-		UPDATE sources SET config = ?, cron_expr = ?, external_id = ? WHERE id = ?
-	`, src.Config, src.CronExpr, src.ExternalID, id)
+		UPDATE sources SET config = ?, external_id = ? WHERE id = ?
+	`, src.Config, src.ExternalID, id)
 
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update source: %v", err))
 		return
 	}
 
-	// Re-register job with new schedule
-	if err := h.scheduler.RegisterJob(&src); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update schedule: %v", err))
-		return
-	}
+	// No need to register job - scheduler runs all sources on global schedule
 
 	json.NewEncoder(w).Encode(toSourceResponse(&src))
 }
@@ -358,8 +323,7 @@ func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	// Unregister from scheduler first
-	h.scheduler.UnregisterJob(id)
+	// No need to unregister job - scheduler loads all sources dynamically
 
 	// Delete from database (cascade deletes articles and comments)
 	result, err := h.db.Exec("DELETE FROM sources WHERE id = ?", id)
@@ -426,8 +390,7 @@ func (h *Handler) DeleteSourceByTypeAndExternalID(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Unregister from scheduler first (consistent with DeleteSource)
-	h.scheduler.UnregisterJob(sourceID)
+	// No need to unregister job - scheduler loads all sources dynamically
 
 	// Delete from database (cascade deletes articles and comments)
 	result, err := h.db.Exec("DELETE FROM sources WHERE id = ?", sourceID)
@@ -448,16 +411,16 @@ func (h *Handler) DeleteSourceByTypeAndExternalID(w http.ResponseWriter, r *http
 }
 
 // GetSchedule godoc
-// @Summary Get upcoming scheduled jobs
-// @Description Returns all crawl jobs scheduled to run in the next 24 hours
+// @Summary Get global schedule information
+// @Description Returns the global crawl schedule (applies to all sources)
 // @Tags schedule
 // @Accept json
 // @Produce json
-// @Success 200 {array} db.ScheduleEntry
+// @Success 200 {object} db.ScheduleEntry
 // @Failure 500 {object} ErrorResponse "Scheduler error"
 // @Router /schedule [get]
 func (h *Handler) GetSchedule(w http.ResponseWriter, r *http.Request) {
-	schedule, err := h.scheduler.GetSchedule(24 * time.Hour)
+	schedule, err := h.scheduler.GetSchedule()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get schedule: %v", err))
 		return
@@ -821,6 +784,90 @@ func (h *Handler) Metrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(metrics)
+}
+
+// GetGlobalConfig godoc
+// @Summary Get global configuration
+// @Description Returns the global crawl schedule and rate limits that apply to all sources
+// @Tags config
+// @Produce json
+// @Success 200 {object} db.GlobalConfig
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /config [get]
+func (h *Handler) GetGlobalConfig(w http.ResponseWriter, r *http.Request) {
+	config, err := h.db.GetGlobalConfig()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get global config: %v", err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(config); err != nil {
+		// Can't change status code at this point, but log the error
+		fmt.Printf("ERROR: Failed to encode global config response: %v\n", err)
+	}
+}
+
+// UpdateGlobalConfig godoc
+// @Summary Update global configuration
+// @Description Updates global crawl schedule and rate limits (partial update), then hot-reloads the scheduler
+// @Tags config
+// @Accept json
+// @Produce json
+// @Param config body UpdateGlobalConfigRequest true "Configuration updates (PATCH-style partial updates)"
+// @Success 200 {object} db.GlobalConfig
+// @Failure 400 {object} ErrorResponse "Invalid request body or validation error"
+// @Failure 500 {object} ErrorResponse "Database or scheduler error"
+// @Router /config [patch]
+func (h *Handler) UpdateGlobalConfig(w http.ResponseWriter, r *http.Request) {
+	var req UpdateGlobalConfigRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Get current config
+	config, err := h.db.GetGlobalConfig()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get current config: %v", err))
+		return
+	}
+
+	// Apply updates (PATCH-style partial updates)
+	if req.CronExpr != nil {
+		config.CronExpr = *req.CronExpr
+	}
+	if req.RedditRateLimitDelayMs != nil {
+		config.RedditRateLimitDelayMs = *req.RedditRateLimitDelayMs
+	}
+	if req.SemanticScholarRateLimitDelayMs != nil {
+		config.SemanticScholarRateLimitDelayMs = *req.SemanticScholarRateLimitDelayMs
+	}
+
+	// Validate using existing validation
+	if err := config.Validate(); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Update database
+	if err := h.db.UpdateGlobalConfig(config); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update config: %v", err))
+		return
+	}
+
+	// Hot-reload scheduler to apply changes immediately
+	if err := h.scheduler.Reload(); err != nil {
+		respondError(w, http.StatusInternalServerError, "Configuration saved but scheduler reload failed. Manual restart may be required.")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(config); err != nil {
+		// Can't change status code at this point, but log the error
+		fmt.Printf("ERROR: Failed to encode global config response: %v\n", err)
+	}
 }
 
 // Helper functions

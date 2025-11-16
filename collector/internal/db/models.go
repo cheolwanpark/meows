@@ -2,17 +2,49 @@ package db
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
 
+// GlobalConfig represents the global collector configuration
+// Stored as a singleton row in the global_config table
+type GlobalConfig struct {
+	ID                              int       `json:"id"`
+	CronExpr                        string    `json:"cron_expr"`
+	RedditRateLimitDelayMs          int       `json:"reddit_rate_limit_delay_ms"`
+	SemanticScholarRateLimitDelayMs int       `json:"semantic_scholar_rate_limit_delay_ms"`
+	UpdatedAt                       time.Time `json:"updated_at"`
+}
+
+// Validate validates the global configuration
+func (gc *GlobalConfig) Validate() error {
+	// Validate cron expression
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	if _, err := parser.Parse(gc.CronExpr); err != nil {
+		return fmt.Errorf("invalid cron expression: %w", err)
+	}
+
+	// Validate rate limits
+	if gc.RedditRateLimitDelayMs <= 0 {
+		return fmt.Errorf("reddit rate limit delay must be positive, got %d", gc.RedditRateLimitDelayMs)
+	}
+	if gc.SemanticScholarRateLimitDelayMs <= 0 {
+		return fmt.Errorf("semantic scholar rate limit delay must be positive, got %d", gc.SemanticScholarRateLimitDelayMs)
+	}
+
+	return nil
+}
+
 // Source represents a crawling source configuration
-// WARNING: Config field may contain sensitive credentials (OAuth tokens, API keys)
-// which are exposed in API responses. Add authentication to API before production use.
+// Config field contains per-source settings only (no credentials, no schedule)
+// Credentials are now stored in environment variables
+// Schedule is now global (see GlobalConfig)
 type Source struct {
 	ID            string          `json:"id"`
-	Type          string          `json:"type"` // "reddit" or "semantic_scholar"
-	Config        json.RawMessage `json:"config"`
-	CronExpr      string          `json:"cron_expr"`
+	Type          string          `json:"type"`        // "reddit" or "semantic_scholar"
+	Config        json.RawMessage `json:"config"`      // Per-source settings (subreddit, query, filters, etc.)
 	ExternalID    string          `json:"external_id"` // For dedup (e.g., subreddit name)
 	LastRunAt     *time.Time      `json:"last_run_at,omitempty"`
 	LastSuccessAt *time.Time      `json:"last_success_at,omitempty"`
@@ -57,34 +89,27 @@ type ScheduleEntry struct {
 	LastRunAt  *time.Time `json:"last_run_at,omitempty" example:"2024-11-15T12:00:00Z"`
 }
 
-// RedditConfig holds Reddit-specific configuration
+// RedditConfig holds Reddit-specific per-source configuration
+// Credentials and rate limits are now global (see GlobalConfig and env vars)
 type RedditConfig struct {
-	Subreddit        string `json:"subreddit"`
-	Sort             string `json:"sort"`                  // "hot", "new", "top", "rising"
-	TimeFilter       string `json:"time_filter,omitempty"` // For "top": "hour", "day", "week", "month", "year", "all"
-	Limit            int    `json:"limit"`
-	MinScore         int    `json:"min_score"`
-	MinComments      int    `json:"min_comments"`
-	UserAgent        string `json:"user_agent"`
-	RateLimitDelayMs int    `json:"rate_limit_delay_ms"`
-	OAuth            *struct {
-		ClientID     string `json:"client_id"`
-		ClientSecret string `json:"client_secret"`
-		Username     string `json:"username"`
-		Password     string `json:"password"`
-	} `json:"oauth,omitempty"`
+	Subreddit   string `json:"subreddit"`
+	Sort        string `json:"sort"`                  // "hot", "new", "top", "rising"
+	TimeFilter  string `json:"time_filter,omitempty"` // For "top": "hour", "day", "week", "month", "year", "all"
+	Limit       int    `json:"limit"`
+	MinScore    int    `json:"min_score"`
+	MinComments int    `json:"min_comments"`
+	UserAgent   string `json:"user_agent"`
 }
 
-// SemanticScholarConfig holds Semantic Scholar configuration
+// SemanticScholarConfig holds Semantic Scholar per-source configuration
+// API key and rate limits are now global (see GlobalConfig and env vars)
 type SemanticScholarConfig struct {
-	Mode             string  `json:"mode"` // "search" or "recommendations"
-	Query            *string `json:"query,omitempty"`
-	PaperID          *string `json:"paper_id,omitempty"`
-	Year             *string `json:"year,omitempty"`
-	MaxResults       int     `json:"max_results"`
-	MinCitations     int     `json:"min_citations"`
-	APIKey           string  `json:"api_key,omitempty"`
-	RateLimitDelayMs int     `json:"rate_limit_delay_ms"`
+	Mode         string  `json:"mode"` // "search" or "recommendations"
+	Query        *string `json:"query,omitempty"`
+	PaperID      *string `json:"paper_id,omitempty"`
+	Year         *string `json:"year,omitempty"`
+	MaxResults   int     `json:"max_results"`
+	MinCitations int     `json:"min_citations"`
 }
 
 // HealthStatus represents the health of the service
