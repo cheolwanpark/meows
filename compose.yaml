@@ -34,8 +34,8 @@ services:
 
     container_name: meows-collector
 
-    ports:
-      - "${COLLECTOR_PORT:-8080}:8080"
+    # Collector is internal only - accessible via Docker network at http://collector:8080
+    # External requests must go through frontend's /api/* routes
 
     environment:
       # Database configuration

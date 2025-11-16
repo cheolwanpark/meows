@@ -96,6 +96,20 @@ Configure via Settings page (⚙️ icon) in the web UI:
 
 ## API Endpoints
 
+### Frontend Public API (Port 3000)
+
+All public API requests go through the frontend at `/api/*`. The collector service is internal only.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/sources` | Create new source |
+| DELETE | `/api/sources/{id}` | Delete source |
+| PATCH | `/api/settings` | Update global settings |
+
+### Collector Internal API (Port 8080, Docker network only)
+
+The collector service is not exposed externally. It's accessible only via Docker network.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/sources` | List all sources |
@@ -108,7 +122,7 @@ Configure via Settings page (⚙️ icon) in the web UI:
 | GET | `/schedule` | Get next scheduled run |
 | GET | `/health` | Health check |
 
-Full API documentation: http://localhost:8080/swagger/index.html
+**Note:** Collector Swagger documentation available only within Docker network
 
 ## Development
 

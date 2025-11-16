@@ -153,29 +153,29 @@ Base URL: `http://localhost:8080` (configurable via `COLLECTOR_URL` env var)
 - `articles []Article`
 - `error string` (if collector unavailable)
 
-### GET /config
+### GET /sources
 **Purpose:** Source management page
-**Data Fetching:** `GET /sources`
+**Data Fetching:** `GET /sources` (from collector)
 **Template:** `pages/config.templ`
 **Props:**
 - `sources []Source`
 - `csrfToken string`
 - `error string` (if collector unavailable)
 
-### POST /config/sources (htmx)
+### POST /api/sources (htmx)
 **Purpose:** Create new source
 **Request:** Form data (name, url, category, cron)
-**Data Mutation:** `POST /sources` on collector
+**Data Mutation:** `POST /sources` on collector (proxied through frontend)
 **Response:**
 - Success: `200 OK` with SourceCard fragment
 - Validation Error: `422 Unprocessable Entity` with form + error messages
-**htmx Attributes:** `hx-post="/config/sources" hx-target="#source-list" hx-swap="afterbegin"`
+**htmx Attributes:** `hx-post="/api/sources" hx-target="#source-list" hx-swap="afterbegin"`
 
-### DELETE /config/sources/:id (htmx)
+### DELETE /api/sources/{id} (htmx)
 **Purpose:** Delete source
-**Data Mutation:** `DELETE /sources/:id` on collector
+**Data Mutation:** `DELETE /sources/{id}` on collector (proxied through frontend)
 **Response:** `200 OK` empty body (htmx removes element)
-**htmx Attributes:** `hx-delete="/config/sources/{id}" hx-target="closest .source-card" hx-swap="delete"`
+**htmx Attributes:** `hx-delete="/api/sources/{id}" hx-target="closest .source-card" hx-swap="delete"`
 
 ---
 
@@ -280,7 +280,7 @@ type FormErrors struct {
 
 ### Pattern 1: Form Submission with Validation
 ```html
-<form hx-post="/config/sources" hx-target="#source-list" hx-swap="afterbegin">
+<form hx-post="/api/sources" hx-target="#source-list" hx-swap="afterbegin">
   <!-- Form fields -->
 </form>
 ```
@@ -294,7 +294,7 @@ type FormErrors struct {
 
 **Validation Error Response (422 Unprocessable Entity):**
 ```html
-<form hx-post="/config/sources" hx-target="#source-list" hx-swap="afterbegin">
+<form hx-post="/api/sources" hx-target="#source-list" hx-swap="afterbegin">
   <div class="error">Subreddit name is required</div>
   <!-- Form fields with error styling -->
 </form>
@@ -303,7 +303,7 @@ type FormErrors struct {
 ### Pattern 2: Delete with Confirmation
 ```html
 <button
-  hx-delete="/config/sources/{id}"
+  hx-delete="/api/sources/{id}"
   hx-target="closest .source-card"
   hx-swap="delete"
   hx-confirm="Delete this source? All articles will be removed."
@@ -318,7 +318,7 @@ type FormErrors struct {
 ### Pattern 3: Loading States
 ```html
 <button
-  hx-post="/config/sources"
+  hx-post="/api/sources"
   hx-indicator="#spinner"
   class="btn-submit">
   Submit

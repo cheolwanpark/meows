@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"html"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -366,7 +367,8 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Parse form
 	if err := r.ParseForm(); err != nil {
-		respondWithError(w, "Invalid form data", "Failed to parse form", err, http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`<div class="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-800 dark:text-red-200">Invalid form data. Please try again.</div>`))
 		return
 	}
 
@@ -409,7 +411,12 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Update config via collector
 	if _, err := h.collector.UpdateConfig(ctx, req); err != nil {
-		respondWithError(w, "Failed to update settings. Please check your inputs and try again.", "Failed to update config", err, http.StatusBadRequest)
+		// Extract error message and return user-friendly HTML
+		errorMsg := err.Error()
+		// Escape HTML to prevent XSS
+		escapedMsg := html.EscapeString(errorMsg)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`<div class="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-800 dark:text-red-200">Failed to update settings: ` + escapedMsg + `</div>`))
 		return
 	}
 

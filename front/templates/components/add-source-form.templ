@@ -4,7 +4,7 @@ import "github.com/cheolwanpark/meows/front/internal/models"
 
 templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[string]string) {
 	<form
-		hx-post="/sources"
+		hx-post="/api/sources"
 		hx-target="#source-list"
 		hx-swap="afterbegin"
 		hx-indicator=".htmx-indicator"

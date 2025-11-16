@@ -24,7 +24,9 @@ templ settingsPageContent(config collector.GlobalConfig, csrfToken string, error
 		<form
 			hx-patch="/api/settings"
 			hx-target="#settings-result"
-			hx-swap="innerHTML"
+			hx-swap="innerHTML swap:1s"
+			hx-target-4xx="#settings-result"
+			hx-indicator=".htmx-indicator"
 			class="space-y-8 bg-card border rounded-lg p-6"
 		>
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
@@ -181,6 +183,7 @@ templ settingsPageContent(config collector.GlobalConfig, csrfToken string, error
 					class="px-6 py-2 bg-brand text-white rounded-md hover:bg-brand/90 transition-colors font-medium"
 				>
 					Save Settings
+					<span class="htmx-indicator ml-2">⏳</span>
 				</button>
 			</div>
 
