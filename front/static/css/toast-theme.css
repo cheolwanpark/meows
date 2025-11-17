@@ -1,0 +1,89 @@
+/* Toast Theme Variables and Styles */
+/* Integrates toastify-js with the Tailwind theme */
+
+:root {
+  /* Toast color variables - light mode */
+  --toast-success-bg: hsl(142, 76%, 36%);
+  --toast-success-fg: hsl(0, 0%, 100%);
+
+  --toast-error-bg: hsl(var(--destructive, 0 84.2% 60.2%));
+  --toast-error-fg: hsl(var(--destructive-foreground, 0 0% 98%));
+
+  --toast-warning-bg: hsl(38, 92%, 50%);
+  --toast-warning-fg: hsl(0, 0%, 100%);
+
+  --toast-info-bg: hsl(217, 91%, 60%);
+  --toast-info-fg: hsl(0, 0%, 100%);
+
+  --toast-loading-bg: hsl(var(--muted, 0 0% 96.1%));
+  --toast-loading-fg: hsl(var(--muted-foreground, 0 0% 45.1%));
+}
+
+.dark {
+  /* Toast color variables - dark mode */
+  --toast-success-bg: hsl(142, 71%, 45%);
+  --toast-success-fg: hsl(0, 0%, 10%);
+
+  --toast-error-bg: hsl(var(--destructive, 0 62.8% 30.6%));
+  --toast-error-fg: hsl(var(--destructive-foreground, 0 85.6% 97.3%));
+
+  --toast-warning-bg: hsl(38, 90%, 55%);
+  --toast-warning-fg: hsl(0, 0%, 10%);
+
+  --toast-info-bg: hsl(217, 89%, 65%);
+  --toast-info-fg: hsl(0, 0%, 10%);
+
+  --toast-loading-bg: hsl(var(--muted, 0 0% 14.9%));
+  --toast-loading-fg: hsl(var(--muted-foreground, 0 0% 63.9%));
+}
+
+/* Custom toast classes for toastify */
+.toastify.toast-success {
+  background: var(--toast-success-bg) !important;
+  color: var(--toast-success-fg) !important;
+  border-radius: var(--radius);
+  font-family: "Geist", system-ui, sans-serif;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+.toastify.toast-error {
+  background: var(--toast-error-bg) !important;
+  color: var(--toast-error-fg) !important;
+  border-radius: var(--radius);
+  font-family: "Geist", system-ui, sans-serif;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+.toastify.toast-warning {
+  background: var(--toast-warning-bg) !important;
+  color: var(--toast-warning-fg) !important;
+  border-radius: var(--radius);
+  font-family: "Geist", system-ui, sans-serif;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+.toastify.toast-info {
+  background: var(--toast-info-bg) !important;
+  color: var(--toast-info-fg) !important;
+  border-radius: var(--radius);
+  font-family: "Geist", system-ui, sans-serif;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+.toastify.toast-loading {
+  background: var(--toast-loading-bg) !important;
+  color: var(--toast-loading-fg) !important;
+  border-radius: var(--radius);
+  font-family: "Geist", system-ui, sans-serif;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+/* Close button styling */
+.toastify .toast-close {
+  opacity: 0.7;
+  font-weight: bold;
+}
+
+.toastify .toast-close:hover {
+  opacity: 1;
+}

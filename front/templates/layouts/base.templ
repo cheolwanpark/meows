@@ -1,7 +1,5 @@
 package layouts
 
-import "github.com/cheolwanpark/meows/front/templates/components"
-
 templ Base(title string, csrfToken string, content templ.Component) {
 	<!DOCTYPE html>
 	<html lang="en" class="h-full">
@@ -24,10 +22,14 @@ templ Base(title string, csrfToken string, content templ.Component) {
 
 			<!-- Styles -->
 			<link rel="stylesheet" href="/static/css/output.css"/>
+			<link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css"/>
+			<link rel="stylesheet" href="/static/css/toast-theme.css"/>
 
 			<!-- Scripts -->
 			<script src="/static/js/htmx.min.js" defer></script>
 			<script src="/static/js/alpine.min.js" defer></script>
+			<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js" defer></script>
+			<script src="/static/js/toast.js" defer></script>
 			<script>
 				// Configure htmx to use CSRF token from meta tag
 				document.addEventListener('DOMContentLoaded', function() {
@@ -36,22 +38,30 @@ templ Base(title string, csrfToken string, content templ.Component) {
 						evt.detail.headers['X-CSRF-Token'] = token;
 					});
 
-					// Global htmx error handlers - dispatch custom events for toast notifications
+					// Global htmx error handlers - show toast notifications
 					document.body.addEventListener('htmx:responseError', function(evt) {
+						if (!window.toast) return;
 						const message = evt.detail.xhr.statusText || 'An error occurred while processing your request';
-						window.dispatchEvent(new CustomEvent('show-error', { detail: message }));
+						window.toast.error(message);
 					});
 
 					document.body.addEventListener('htmx:sendError', function(evt) {
-						window.dispatchEvent(new CustomEvent('show-error', {
-							detail: 'Network error: Unable to reach the server'
-						}));
+						if (!window.toast) return;
+						window.toast.error('Network error: Unable to reach the server');
 					});
 
 					document.body.addEventListener('htmx:timeout', function(evt) {
-						window.dispatchEvent(new CustomEvent('show-error', {
-							detail: 'Request timed out. Please try again.'
-						}));
+						if (!window.toast) return;
+						window.toast.error('Request timed out. Please try again.');
+					});
+
+					// Listen for server-triggered toast events (from HX-Trigger headers)
+					document.body.addEventListener('showToast', function(evt) {
+						if (!window.toast) return;
+						const detail = evt.detail;
+						if (detail && detail.type && detail.text) {
+							window.toast.show(detail.text, detail.type);
+						}
 					});
 				});
 			</script>
@@ -67,7 +77,6 @@ templ Base(title string, csrfToken string, content templ.Component) {
 			</script>
 		</head>
 		<body class="h-full bg-background text-foreground">
-			@components.ToastContainer()
 			@Header()
 			<main class="container mx-auto px-4 py-8 max-w-4xl">
 				@content

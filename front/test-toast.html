@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toast Test Page</title>
+
+    <!-- Toastify CSS -->
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+    <link rel="stylesheet" href="/static/css/toast-theme.css">
+
+    <style>
+        /* Tailwind-like base styles for testing */
+        :root {
+            --background: 0 0% 100%;
+            --foreground: 0 0% 3.9%;
+            --destructive: 0 84.2% 60.2%;
+            --destructive-foreground: 0 0% 98%;
+            --muted: 0 0% 96.1%;
+            --muted-foreground: 0 0% 45.1%;
+            --radius: 0.625rem;
+        }
+
+        .dark {
+            --background: 0 0% 3.9%;
+            --foreground: 0 0% 98%;
+            --destructive: 0 62.8% 30.6%;
+            --destructive-foreground: 0 85.6% 97.3%;
+            --muted: 0 0% 14.9%;
+            --muted-foreground: 0 0% 63.9%;
+        }
+
+        body {
+            font-family: "Geist", system-ui, sans-serif;
+            padding: 40px;
+            background: hsl(var(--background));
+            color: hsl(var(--foreground));
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .dark body {
+            background: hsl(var(--background));
+            color: hsl(var(--foreground));
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            border-radius: var(--radius);
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            transition: opacity 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.8;
+        }
+
+        .btn-success {
+            background: hsl(142, 76%, 36%);
+            color: white;
+        }
+
+        .btn-error {
+            background: hsl(var(--destructive));
+            color: hsl(var(--destructive-foreground));
+        }
+
+        .btn-warning {
+            background: hsl(38, 92%, 50%);
+            color: white;
+        }
+
+        .btn-info {
+            background: hsl(217, 91%, 60%);
+            color: white;
+        }
+
+        .btn-loading {
+            background: hsl(var(--muted));
+            color: hsl(var(--muted-foreground));
+        }
+
+        .btn-theme {
+            background: hsl(var(--foreground));
+            color: hsl(var(--background));
+        }
+
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <h1>Toastify-js Integration Test</h1>
+
+    <div class="section">
+        <span class="label">Toast Variants:</span>
+        <button class="btn-success" onclick="testSuccess()">Success Toast</button>
+        <button class="btn-error" onclick="testError()">Error Toast</button>
+        <button class="btn-warning" onclick="testWarning()">Warning Toast</button>
+        <button class="btn-info" onclick="testInfo()">Info Toast</button>
+        <button class="btn-loading" onclick="testLoading()">Loading Toast (auto-hide in 2s)</button>
+    </div>
+
+    <div class="section">
+        <span class="label">HTMX Integration Test:</span>
+        <button class="btn-success" onclick="testHtmxEvent()">Trigger HTMX showToast Event</button>
+    </div>
+
+    <div class="section">
+        <span class="label">Theme:</span>
+        <button class="btn-theme" onclick="toggleDarkMode()">Toggle Dark Mode</button>
+    </div>
+
+    <!-- Toastify JS -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+    <script src="/static/js/toast.js"></script>
+
+    <script>
+        // Test functions
+        function testSuccess() {
+            window.toast.success("Operation completed successfully!");
+        }
+
+        function testError() {
+            window.toast.error("An error occurred while processing your request");
+        }
+
+        function testWarning() {
+            window.toast.warning("Warning: This action cannot be undone");
+        }
+
+        function testInfo() {
+            window.toast.info("Here is some helpful information");
+        }
+
+        let loadingToast = null;
+        function testLoading() {
+            loadingToast = window.toast.loading("Processing your request...");
+            // Auto-hide after 2 seconds
+            setTimeout(() => {
+                if (loadingToast) {
+                    loadingToast.hide();
+                    window.toast.success("Loading complete!");
+                }
+            }, 2000);
+        }
+
+        function testHtmxEvent() {
+            // Simulate HTMX trigger event
+            const event = new CustomEvent('showToast', {
+                detail: {
+                    type: 'success',
+                    text: 'HTMX event triggered successfully!'
+                }
+            });
+            document.body.dispatchEvent(event);
+        }
+
+        function toggleDarkMode() {
+            document.documentElement.classList.toggle('dark');
+        }
+
+        // Listen for HTMX-style events (same as base.templ)
+        document.addEventListener('DOMContentLoaded', function() {
+            document.body.addEventListener('showToast', function(evt) {
+                const detail = evt.detail;
+                if (detail && detail.type && detail.text) {
+                    window.toast.show(detail.text, detail.type);
+                }
+            });
+        });
+
+        console.log('Toast test page loaded. Toast utility:', window.toast);
+    </script>
+</body>
+</html>

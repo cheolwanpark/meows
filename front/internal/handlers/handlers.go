@@ -42,9 +42,19 @@ func respondWithError(w http.ResponseWriter, userMsg string, logMsg string, err 
 	}
 
 	// Set HX-Trigger header for toast notification (properly encoded to prevent injection)
-	trigger := map[string]string{"show-error": userMsg}
-	triggerJSON, _ := json.Marshal(trigger)
-	w.Header().Set("HX-Trigger", string(triggerJSON))
+	trigger := map[string]interface{}{
+		"showToast": map[string]string{
+			"type": "error",
+			"text": userMsg,
+		},
+	}
+	triggerJSON, err := json.Marshal(trigger)
+	if err != nil {
+		// This should never happen with simple map structures, but log just in case
+		slog.Error("Failed to marshal toast trigger", "error", err)
+	} else {
+		w.Header().Set("HX-Trigger", string(triggerJSON))
+	}
 
 	// Write HTTP status and generic error response
 	http.Error(w, userMsg, status)
@@ -289,6 +299,18 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 	// Success: return source card for htmx to insert
 	viewSource := models.FromCollectorSource(*source)
 	csrfToken := h.csrf.GetToken(r)
+
+	// Trigger success toast
+	trigger := map[string]interface{}{
+		"showToast": map[string]string{
+			"type": "success",
+			"text": "Source added successfully",
+		},
+	}
+	if triggerJSON, err := json.Marshal(trigger); err == nil {
+		w.Header().Set("HX-Trigger", string(triggerJSON))
+	}
+
 	component := components.SourceCard(viewSource, csrfToken)
 	component.Render(r.Context(), w)
 }
@@ -325,6 +347,17 @@ func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 	viewSources := make([]models.Source, len(sources))
 	for i, s := range sources {
 		viewSources[i] = models.FromCollectorSource(s)
+	}
+
+	// Trigger success toast
+	trigger := map[string]interface{}{
+		"showToast": map[string]string{
+			"type": "success",
+			"text": "Source removed successfully",
+		},
+	}
+	if triggerJSON, err := json.Marshal(trigger); err == nil {
+		w.Header().Set("HX-Trigger", string(triggerJSON))
 	}
 
 	// Return updated source list HTML
@@ -420,8 +453,16 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return success message
-	w.Header().Set("HX-Trigger", "settingsUpdated")
+	// Return success message with toast notification
+	trigger := map[string]interface{}{
+		"showToast": map[string]string{
+			"type": "success",
+			"text": "Settings updated successfully",
+		},
+	}
+	if triggerJSON, err := json.Marshal(trigger); err == nil {
+		w.Header().Set("HX-Trigger", string(triggerJSON))
+	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`<div class="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-green-800 dark:text-green-200">Settings updated successfully!</div>`))
 }
