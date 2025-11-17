@@ -294,11 +294,21 @@ func (s *SemanticScholarSource) paperToArticle(paper s2Paper) db.Article {
 		primaryAuthor = authorNames[0]
 	}
 
-	metadata, _ := json.Marshal(map[string]interface{}{
-		"citation_count": paper.CitationCount,
-		"year":           paper.Year,
-		"authors":        authorNames,
+	// Handle year zero-value (missing year from API)
+	yearStr := ""
+	if paper.Year > 0 {
+		yearStr = strconv.Itoa(paper.Year)
+	}
+
+	metadata, err := json.Marshal(map[string]interface{}{
+		"citations": paper.CitationCount,
+		"year":      yearStr,
+		"authors":   authorNames,
 	})
+	if err != nil {
+		// Fallback to empty JSON object if marshaling fails
+		metadata = []byte("{}")
+	}
 
 	// Use year as a proxy for written_at since we don't have exact date
 	writtenAt := time.Date(paper.Year, 1, 1, 0, 0, 0, 0, time.UTC)
