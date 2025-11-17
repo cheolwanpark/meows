@@ -27,7 +27,10 @@ func TestDeleteSourceByTypeAndExternalID_InvalidType(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched := scheduler.New(database, 5)
+	sched, err := scheduler.New(database, 5)
+	if err != nil {
+		t.Fatalf("Failed to create scheduler: %v", err)
+	}
 	router := SetupRouter(database, sched)
 
 	req := httptest.NewRequest("DELETE", "/sources/invalid_type/test", nil)
@@ -44,7 +47,10 @@ func TestDeleteSourceByTypeAndExternalID_EmptyExternalID(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched := scheduler.New(database, 5)
+	sched, err := scheduler.New(database, 5)
+	if err != nil {
+		t.Fatalf("Failed to create scheduler: %v", err)
+	}
 	router := SetupRouter(database, sched)
 
 	req := httptest.NewRequest("DELETE", "/sources/reddit/", nil)
@@ -62,7 +68,10 @@ func TestDeleteSourceByTypeAndExternalID_ExternalIDWithSlash(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched := scheduler.New(database, 5)
+	sched, err := scheduler.New(database, 5)
+	if err != nil {
+		t.Fatalf("Failed to create scheduler: %v", err)
+	}
 	router := SetupRouter(database, sched)
 
 	req := httptest.NewRequest("DELETE", "/sources/reddit/test/with/slash", nil)
@@ -80,7 +89,10 @@ func TestDeleteSourceByTypeAndExternalID_NotFound(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched := scheduler.New(database, 5)
+	sched, err := scheduler.New(database, 5)
+	if err != nil {
+		t.Fatalf("Failed to create scheduler: %v", err)
+	}
 	router := SetupRouter(database, sched)
 
 	req := httptest.NewRequest("DELETE", "/sources/reddit/nonexistent", nil)
@@ -97,12 +109,15 @@ func TestDeleteSourceByTypeAndExternalID_Success(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched := scheduler.New(database, 5)
+	sched, err := scheduler.New(database, 5)
+	if err != nil {
+		t.Fatalf("Failed to create scheduler: %v", err)
+	}
 
 	// Insert a test source
-	_, err := database.Exec(`
-		INSERT INTO sources (id, type, external_id, config, cron_expr, status, created_at)
-		VALUES ('test-id', 'reddit', 'golang', '{"subreddit":"golang"}', '0 0 * * *', 'idle', datetime('now'))
+	_, err = database.Exec(`
+		INSERT INTO sources (id, type, external_id, config, status, created_at)
+		VALUES ('test-id', 'reddit', 'golang', '{"subreddit":"golang"}', 'idle', datetime('now'))
 	`)
 	if err != nil {
 		t.Fatalf("Failed to insert test source: %v", err)
@@ -134,7 +149,10 @@ func TestGetGlobalConfig(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched := scheduler.New(database, 5)
+	sched, err := scheduler.New(database, 5)
+	if err != nil {
+		t.Fatalf("Failed to create scheduler: %v", err)
+	}
 	router := SetupRouter(database, sched)
 
 	req := httptest.NewRequest("GET", "/config", nil)
@@ -157,7 +175,10 @@ func TestUpdateGlobalConfig_Valid(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched := scheduler.New(database, 5)
+	sched, err := scheduler.New(database, 5)
+	if err != nil {
+		t.Fatalf("Failed to create scheduler: %v", err)
+	}
 	router := SetupRouter(database, sched)
 
 	// Test valid update
@@ -188,7 +209,10 @@ func TestUpdateGlobalConfig_InvalidCron(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched := scheduler.New(database, 5)
+	sched, err := scheduler.New(database, 5)
+	if err != nil {
+		t.Fatalf("Failed to create scheduler: %v", err)
+	}
 	router := SetupRouter(database, sched)
 
 	// Test invalid cron expression
@@ -207,7 +231,10 @@ func TestUpdateGlobalConfig_InvalidRateLimit(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched := scheduler.New(database, 5)
+	sched, err := scheduler.New(database, 5)
+	if err != nil {
+		t.Fatalf("Failed to create scheduler: %v", err)
+	}
 	router := SetupRouter(database, sched)
 
 	// Test negative rate limit

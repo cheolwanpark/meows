@@ -294,6 +294,7 @@ func (s *Scheduler) runAllSources() error {
 }
 
 // runSourcesSequentially executes sources of the same type one after another
+// Fetches each source then stores results in per-source atomic transaction
 func (s *Scheduler) runSourcesSequentially(sources []*db.Source, limiter *rate.Limiter) error {
 	for _, src := range sources {
 		// Per-source timeout (5 minutes)
@@ -307,32 +308,95 @@ func (s *Scheduler) runSourcesSequentially(sources []*db.Source, limiter *rate.L
 		}
 
 		// Execute fetch with timeout
-		err := s.runSourceWithTimeout(ctx, src, limiter)
-
-		// Update status back to idle
-		if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
-			log.Printf("Failed to set source %s to idle: %v", src.ID, err)
-		}
+		articles, comments, fetchErr := s.runSourceWithTimeout(ctx, src, limiter)
 
 		// Cancel context immediately (don't defer in loop)
 		cancel()
 
-		if err != nil {
-			log.Printf("Source %s failed: %v", src.ID, err)
-			s.recordError(src.ID, err)
+		// Handle fetch error
+		if fetchErr != nil {
+			log.Printf("Source %s fetch failed: %v", src.ID, fetchErr)
+			s.recordError(src.ID, fetchErr)
+
+			// Update status back to idle
+			if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
+				log.Printf("Failed to set source %s to idle: %v", src.ID, err)
+			}
+
 			// Continue with next source (don't fail entire type group)
+			continue
 		}
+
+		// Store results in per-source atomic transaction
+		tx, err := s.db.Begin()
+		if err != nil {
+			log.Printf("Source %s: failed to begin transaction: %v", src.ID, err)
+			s.recordError(src.ID, fmt.Errorf("failed to begin transaction: %w", err))
+
+			if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
+				log.Printf("Failed to set source %s to idle: %v", src.ID, err)
+			}
+			continue
+		}
+		defer tx.Rollback() // Safe: no-op if commit succeeds
+
+		// Store articles
+		if err := s.storeArticlesInTx(tx, articles); err != nil {
+			log.Printf("Source %s: failed to store articles: %v", src.ID, err)
+			s.recordError(src.ID, fmt.Errorf("failed to store articles: %w", err))
+
+			if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
+				log.Printf("Failed to set source %s to idle: %v", src.ID, err)
+			}
+			continue
+		}
+
+		// Store comments
+		if err := s.storeCommentsInTx(tx, comments); err != nil {
+			log.Printf("Source %s: failed to store comments: %v", src.ID, err)
+			s.recordError(src.ID, fmt.Errorf("failed to store comments: %w", err))
+
+			if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
+				log.Printf("Failed to set source %s to idle: %v", src.ID, err)
+			}
+			continue
+		}
+
+		// Commit transaction
+		if err := tx.Commit(); err != nil {
+			log.Printf("Source %s: failed to commit transaction: %v", src.ID, err)
+			s.recordError(src.ID, fmt.Errorf("failed to commit transaction: %w", err))
+
+			if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
+				log.Printf("Failed to set source %s to idle: %v", src.ID, err)
+			}
+			continue
+		}
+
+		// Transaction successful - update timestamps
+		now := time.Now()
+		_, err = s.db.Exec(
+			"UPDATE sources SET last_run_at = ?, last_success_at = ?, last_error = NULL, status = ? WHERE id = ?",
+			now, now, "idle", src.ID,
+		)
+		if err != nil {
+			log.Printf("Source %s: failed to update timestamps: %v", src.ID, err)
+			// Don't treat this as a critical error - data was stored successfully
+		}
+
+		log.Printf("Source %s completed successfully: %d articles, %d comments inserted", src.ID, len(articles), len(comments))
 	}
 
 	return nil
 }
 
 // runSourceWithTimeout executes a single source fetch with timeout
-func (s *Scheduler) runSourceWithTimeout(ctx context.Context, src *db.Source, limiter *rate.Limiter) error {
+// Returns fetched articles and comments for centralized storage
+func (s *Scheduler) runSourceWithTimeout(ctx context.Context, src *db.Source, limiter *rate.Limiter) ([]db.Article, []db.Comment, error) {
 	// Create source instance (Factory loads fresh global config with credentials from DB)
 	sourceImpl, err := source.Factory(src, s.db, limiter, s.maxCommentDepth)
 	if err != nil {
-		return fmt.Errorf("failed to create source: %w", err)
+		return nil, nil, fmt.Errorf("failed to create source: %w", err)
 	}
 
 	// Determine since time
@@ -344,30 +408,11 @@ func (s *Scheduler) runSourceWithTimeout(ctx context.Context, src *db.Source, li
 	// Fetch articles and comments
 	articles, comments, err := sourceImpl.Fetch(ctx, since)
 	if err != nil {
-		return fmt.Errorf("fetch failed: %w", err)
+		return nil, nil, fmt.Errorf("fetch failed: %w", err)
 	}
 
-	// Store results
-	if err := s.storeArticles(articles); err != nil {
-		return fmt.Errorf("failed to store articles: %w", err)
-	}
-
-	if err := s.storeComments(comments); err != nil {
-		return fmt.Errorf("failed to store comments: %w", err)
-	}
-
-	// Update timestamps
-	now := time.Now()
-	_, err = s.db.Exec(
-		"UPDATE sources SET last_run_at = ?, last_success_at = ?, last_error = NULL WHERE id = ?",
-		now, now, src.ID,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to update timestamps: %w", err)
-	}
-
-	log.Printf("Source %s completed: %d articles, %d comments", src.ID, len(articles), len(comments))
-	return nil
+	log.Printf("Source %s fetched: %d articles, %d comments", src.ID, len(articles), len(comments))
+	return articles, comments, nil
 }
 
 // createRateLimiters creates rate limiters for each source type based on provided config
@@ -463,24 +508,23 @@ func (s *Scheduler) recordError(sourceID string, err error) {
 	}
 }
 
-// storeArticles stores articles in the database using UPSERT
-func (s *Scheduler) storeArticles(articles []db.Article) error {
+// storeArticlesInTx stores articles in the database using UPSERT within a transaction
+// Uses full PUT/overwrite semantics - updates all fields except id and created_at
+func (s *Scheduler) storeArticlesInTx(tx *sql.Tx, articles []db.Article) error {
 	if len(articles) == 0 {
 		return nil
 	}
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO articles (id, source_id, external_id, title, author, content, url, written_at, metadata, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(source_id, external_id) DO UPDATE SET
-			metadata = excluded.metadata,
-			content = excluded.content
+			title = excluded.title,
+			author = excluded.author,
+			content = excluded.content,
+			url = excluded.url,
+			written_at = excluded.written_at,
+			metadata = excluded.metadata
 	`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %w", err)
@@ -505,12 +549,13 @@ func (s *Scheduler) storeArticles(articles []db.Article) error {
 		}
 	}
 
-	return tx.Commit()
+	return nil
 }
 
-// storeComments stores comments in the database using UPSERT
-func (s *Scheduler) storeComments(comments []db.Comment) error {
-	if len(comments) == 0 {
+// storeArticles stores articles in the database using UPSERT (legacy wrapper)
+// Deprecated: Use storeArticlesInTx for better transaction control
+func (s *Scheduler) storeArticles(articles []db.Article) error {
+	if len(articles) == 0 {
 		return nil
 	}
 
@@ -520,10 +565,29 @@ func (s *Scheduler) storeComments(comments []db.Comment) error {
 	}
 	defer tx.Rollback()
 
+	if err := s.storeArticlesInTx(tx, articles); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// storeCommentsInTx stores comments in the database using UPSERT within a transaction
+// Uses full PUT/overwrite semantics - updates all fields except id and created_at
+func (s *Scheduler) storeCommentsInTx(tx *sql.Tx, comments []db.Comment) error {
+	if len(comments) == 0 {
+		return nil
+	}
+
 	stmt, err := tx.Prepare(`
 		INSERT INTO comments (id, article_id, external_id, author, content, written_at, parent_id, depth)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(article_id, external_id) DO NOTHING
+		ON CONFLICT(article_id, external_id) DO UPDATE SET
+			author = excluded.author,
+			content = excluded.content,
+			written_at = excluded.written_at,
+			parent_id = excluded.parent_id,
+			depth = excluded.depth
 	`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %w", err)
@@ -544,6 +608,26 @@ func (s *Scheduler) storeComments(comments []db.Comment) error {
 		if err != nil {
 			return fmt.Errorf("failed to insert comment %s: %w", comment.ID, err)
 		}
+	}
+
+	return nil
+}
+
+// storeComments stores comments in the database using UPSERT (legacy wrapper)
+// Deprecated: Use storeCommentsInTx for better transaction control
+func (s *Scheduler) storeComments(comments []db.Comment) error {
+	if len(comments) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := s.storeCommentsInTx(tx, comments); err != nil {
+		return err
 	}
 
 	return tx.Commit()
