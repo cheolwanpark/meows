@@ -38,6 +38,9 @@ cd meows
 # Create data directory
 mkdir -p data
 
+# Set permissions (required for Linux/Colima, not needed for Docker Desktop)
+sudo chown -R 65532:65532 data
+
 # Create and configure .env
 cp .env.example .env
 chmod 600 .env
