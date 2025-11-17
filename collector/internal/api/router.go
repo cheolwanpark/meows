@@ -36,10 +36,9 @@ func SetupRouter(database *db.DB, sched *scheduler.Scheduler) http.Handler {
 	r.Get("/schedule", h.GetSchedule)
 	r.Get("/articles", h.ListArticles)
 	r.Get("/articles/{id}", h.GetArticle)
-	r.Get("/config", h.GetGlobalConfig)
-	r.Patch("/config", h.UpdateGlobalConfig)
 	r.Get("/health", h.Health)
 	r.Get("/metrics", h.Metrics)
+	// Note: Global config endpoints removed - config is now file-based (.config.yaml)
 
 	// Swagger UI (environment-gated for development only)
 	// Access at http://localhost:8080/docs when ENABLE_SWAGGER=true

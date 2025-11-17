@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
 	"golang.org/x/time/rate"
 )
@@ -21,25 +22,18 @@ type Source interface {
 	Validate() error
 }
 
-// Factory creates a Source from a database source record
-// Loads fresh global config with decrypted credentials for each source run
+// Factory creates a Source from a database source record with credentials from config file
 func Factory(
 	source *db.Source,
-	database *db.DB,
+	credentials *config.CredentialsConfig,
 	sharedLimiter *rate.Limiter,
 	maxCommentDepth int,
 ) (Source, error) {
-	// Load global config with decrypted credentials (fresh for each run)
-	globalConfig, err := database.GetGlobalConfigWithCredentials()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load global config with credentials: %w", err)
-	}
-
 	switch source.Type {
 	case "reddit":
-		return NewRedditSource(source, globalConfig, sharedLimiter, maxCommentDepth)
+		return NewRedditSource(source, credentials, sharedLimiter, maxCommentDepth)
 	case "semantic_scholar":
-		return NewSemanticScholarSource(source, globalConfig, sharedLimiter)
+		return NewSemanticScholarSource(source, credentials, sharedLimiter)
 	default:
 		return nil, fmt.Errorf("unknown source type: %s", source.Type)
 	}

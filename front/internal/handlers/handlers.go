@@ -3,10 +3,8 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"html"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/cheolwanpark/meows/front/internal/collector"
 	"github.com/cheolwanpark/meows/front/internal/middleware"
@@ -364,105 +362,4 @@ func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 	csrfToken := h.csrf.GetToken(r)
 	component := components.SourceList(viewSources, csrfToken)
 	component.Render(r.Context(), w)
-}
-
-// SettingsPage renders the global settings page
-func (h *Handler) SettingsPage(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
-	defer cancel()
-
-	// Get CSRF token
-	csrfToken := h.csrf.GetToken(r)
-	h.csrf.SetToken(w, r, csrfToken)
-
-	// Fetch current global config from collector
-	config, err := h.collector.GetConfig(ctx)
-	if err != nil {
-		slog.Error("Failed to fetch global config", "error", err)
-		w.WriteHeader(http.StatusServiceUnavailable)
-		component := layouts.Base("Error", csrfToken, components.ErrorPage(
-			"Service Unavailable",
-			"Unable to fetch settings. The collector service may be down. Please try again later.",
-		))
-		component.Render(r.Context(), w)
-		return
-	}
-
-	// Render settings page
-	component := pages.SettingsPage(*config, csrfToken, models.FormErrors{})
-	component.Render(r.Context(), w)
-}
-
-// UpdateSettings handles global settings update (htmx endpoint)
-func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
-	defer cancel()
-
-	// Parse form
-	if err := r.ParseForm(); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`<div class="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-800 dark:text-red-200">Invalid form data. Please try again.</div>`))
-		return
-	}
-
-	// Build update request with only provided fields
-	req := collector.UpdateGlobalConfigRequest{}
-
-	// Cron expression
-	if cronExpr := r.FormValue("cron_expr"); cronExpr != "" {
-		req.CronExpr = &cronExpr
-	}
-
-	// Rate limits
-	if redditRL := r.FormValue("reddit_rate_limit_delay_ms"); redditRL != "" {
-		if val, err := strconv.Atoi(redditRL); err == nil {
-			req.RedditRateLimitDelayMs = &val
-		}
-	}
-	if s2RL := r.FormValue("semantic_scholar_rate_limit_delay_ms"); s2RL != "" {
-		if val, err := strconv.Atoi(s2RL); err == nil {
-			req.SemanticScholarRateLimitDelayMs = &val
-		}
-	}
-
-	// Credentials (only if non-empty)
-	if clientID := r.FormValue("reddit_client_id"); clientID != "" {
-		req.RedditClientID = &clientID
-	}
-	if clientSecret := r.FormValue("reddit_client_secret"); clientSecret != "" {
-		req.RedditClientSecret = &clientSecret
-	}
-	if username := r.FormValue("reddit_username"); username != "" {
-		req.RedditUsername = &username
-	}
-	if password := r.FormValue("reddit_password"); password != "" {
-		req.RedditPassword = &password
-	}
-	if apiKey := r.FormValue("semantic_scholar_api_key"); apiKey != "" {
-		req.SemanticScholarAPIKey = &apiKey
-	}
-
-	// Update config via collector
-	if _, err := h.collector.UpdateConfig(ctx, req); err != nil {
-		// Extract error message and return user-friendly HTML
-		errorMsg := err.Error()
-		// Escape HTML to prevent XSS
-		escapedMsg := html.EscapeString(errorMsg)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`<div class="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-800 dark:text-red-200">Failed to update settings: ` + escapedMsg + `</div>`))
-		return
-	}
-
-	// Return success message with toast notification
-	trigger := map[string]interface{}{
-		"showToast": map[string]string{
-			"type": "success",
-			"text": "Settings updated successfully",
-		},
-	}
-	if triggerJSON, err := json.Marshal(trigger); err == nil {
-		w.Header().Set("HX-Trigger", string(triggerJSON))
-	}
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`<div class="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-green-800 dark:text-green-200">Settings updated successfully!</div>`))
 }

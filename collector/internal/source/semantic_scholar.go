@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
 	"github.com/google/uuid"
 	"golang.org/x/time/rate"
@@ -52,10 +53,10 @@ type s2Author struct {
 }
 
 // NewSemanticScholarSource creates a new Semantic Scholar source
-// Uses global config for API key (loaded from encrypted DB)
+// Uses credentials from config file
 func NewSemanticScholarSource(
 	source *db.Source,
-	globalConfig *db.GlobalConfig,
+	credentials *config.CredentialsConfig,
 	sharedLimiter *rate.Limiter,
 ) (*SemanticScholarSource, error) {
 	var config db.SemanticScholarConfig
@@ -67,8 +68,8 @@ func NewSemanticScholarSource(
 		source:  source,
 		config:  &config,
 		client:  &http.Client{Timeout: 30 * time.Second},
-		limiter: sharedLimiter,                      // Use shared rate limiter per source type
-		apiKey:  globalConfig.SemanticScholarAPIKey, // Use API key from encrypted DB
+		limiter: sharedLimiter,                           // Use shared rate limiter per source type
+		apiKey:  credentials.SemanticScholarAPIKey, // Use API key from config file
 	}
 
 	return ss, nil

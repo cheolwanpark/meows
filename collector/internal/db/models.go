@@ -2,73 +2,12 @@ package db
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
-
-	"github.com/robfig/cron/v3"
 )
-
-// GlobalConfig represents the global collector configuration
-// Stored as a singleton row in the global_config table
-// Credential fields store ENCRYPTED values
-type GlobalConfig struct {
-	ID                              int       `json:"id"`
-	CronExpr                        string    `json:"cron_expr"`
-	RedditRateLimitDelayMs          int       `json:"reddit_rate_limit_delay_ms"`
-	SemanticScholarRateLimitDelayMs int       `json:"semantic_scholar_rate_limit_delay_ms"`
-	RedditClientID                  string    `json:"-"` // Encrypted, never exposed in JSON
-	RedditClientSecret              string    `json:"-"` // Encrypted, never exposed in JSON
-	RedditUsername                  string    `json:"-"` // Encrypted, never exposed in JSON
-	RedditPassword                  string    `json:"-"` // Encrypted, never exposed in JSON
-	SemanticScholarAPIKey           string    `json:"-"` // Encrypted, never exposed in JSON
-	UpdatedAt                       time.Time `json:"updated_at"`
-}
-
-// GlobalConfigDTO is returned by the API (credentials omitted for security)
-type GlobalConfigDTO struct {
-	ID                              int       `json:"id"`
-	CronExpr                        string    `json:"cron_expr"`
-	RedditRateLimitDelayMs          int       `json:"reddit_rate_limit_delay_ms"`
-	SemanticScholarRateLimitDelayMs int       `json:"semantic_scholar_rate_limit_delay_ms"`
-	UpdatedAt                       time.Time `json:"updated_at"`
-}
-
-// UpdateGlobalConfigRequest is used for PATCH /config requests
-// Pointer fields allow distinguishing "not sent" (nil) from "set to empty" ("")
-type UpdateGlobalConfigRequest struct {
-	CronExpr                        *string `json:"cron_expr,omitempty"`
-	RedditRateLimitDelayMs          *int    `json:"reddit_rate_limit_delay_ms,omitempty"`
-	SemanticScholarRateLimitDelayMs *int    `json:"semantic_scholar_rate_limit_delay_ms,omitempty"`
-	RedditClientID                  *string `json:"reddit_client_id,omitempty"`
-	RedditClientSecret              *string `json:"reddit_client_secret,omitempty"`
-	RedditUsername                  *string `json:"reddit_username,omitempty"`
-	RedditPassword                  *string `json:"reddit_password,omitempty"`
-	SemanticScholarAPIKey           *string `json:"semantic_scholar_api_key,omitempty"`
-}
-
-// Validate validates the global configuration
-func (gc *GlobalConfig) Validate() error {
-	// Validate cron expression
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	if _, err := parser.Parse(gc.CronExpr); err != nil {
-		return fmt.Errorf("invalid cron expression: %w", err)
-	}
-
-	// Validate rate limits
-	if gc.RedditRateLimitDelayMs <= 0 {
-		return fmt.Errorf("reddit rate limit delay must be positive, got %d", gc.RedditRateLimitDelayMs)
-	}
-	if gc.SemanticScholarRateLimitDelayMs <= 0 {
-		return fmt.Errorf("semantic scholar rate limit delay must be positive, got %d", gc.SemanticScholarRateLimitDelayMs)
-	}
-
-	return nil
-}
 
 // Source represents a crawling source configuration
 // Config field contains per-source settings only (no credentials, no schedule)
-// Credentials are now stored in environment variables
-// Schedule is now global (see GlobalConfig)
+// Global credentials and schedule are stored in .config.yaml file
 type Source struct {
 	ID            string          `json:"id"`
 	Type          string          `json:"type"`        // "reddit" or "semantic_scholar"

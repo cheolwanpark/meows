@@ -44,20 +44,6 @@ type UpdateSourceRequest struct {
 	Config *json.RawMessage `json:"config,omitempty"`
 }
 
-// UpdateGlobalConfigRequest represents the request body for updating global configuration
-// @Description Request body for updating global configuration (PATCH-style partial updates)
-// Pointer fields allow distinguishing "not sent" (nil) from "set to empty" ("")
-type UpdateGlobalConfigRequest struct {
-	CronExpr                        *string `json:"cron_expr,omitempty" example:"0 */6 * * *"`
-	RedditRateLimitDelayMs          *int    `json:"reddit_rate_limit_delay_ms,omitempty" example:"2000"`
-	SemanticScholarRateLimitDelayMs *int    `json:"semantic_scholar_rate_limit_delay_ms,omitempty" example:"1000"`
-	RedditClientID                  *string `json:"reddit_client_id,omitempty" example:"your_client_id"`
-	RedditClientSecret              *string `json:"reddit_client_secret,omitempty" example:"your_client_secret"`
-	RedditUsername                  *string `json:"reddit_username,omitempty" example:"your_username"`
-	RedditPassword                  *string `json:"reddit_password,omitempty" example:"your_password"`
-	SemanticScholarAPIKey           *string `json:"semantic_scholar_api_key,omitempty" example:"your_api_key"`
-}
-
 // toSourceResponse converts a db.Source to a safe SourceResponse
 // It extracts a non-sensitive summary from the config instead of exposing credentials
 func toSourceResponse(src *db.Source) SourceResponse {

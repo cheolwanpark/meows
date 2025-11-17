@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cheolwanpark/meows/front/internal/collector"
+	"github.com/cheolwanpark/meows/front/internal/config"
 	"github.com/cheolwanpark/meows/front/internal/handlers"
 	"github.com/cheolwanpark/meows/front/internal/middleware"
 	"github.com/go-chi/chi/v5"
@@ -19,8 +20,11 @@ import (
 )
 
 func main() {
-	// Load configuration from environment
-	cfg := loadConfig()
+	// Load configuration from environment variables
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatal(fmt.Sprintf("Failed to load config: %v", err))
+	}
 
 	// Setup structured logging
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -29,7 +33,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	// Initialize collector client
-	collectorClient := collector.NewClient(cfg.CollectorURL, 10*time.Second)
+	collectorClient := collector.NewClient(cfg.Frontend.CollectorURL, 10*time.Second)
 
 	// Initialize CSRF middleware
 	csrfMiddleware := middleware.NewCSRF()
@@ -56,19 +60,17 @@ func main() {
 	r.Get("/", h.Home)
 	r.Get("/articles/{id}", h.ArticleDetail)
 	r.Get("/sources", h.SourcesPage)
-	r.Get("/settings", h.SettingsPage)
 
 	// API endpoints (all under /api prefix with CSRF protection)
 	r.Route("/api", func(r chi.Router) {
 		r.Use(csrfMiddleware.Validate)
 		r.Post("/sources", h.CreateSource)
 		r.Delete("/sources/{id}", h.DeleteSource)
-		r.Patch("/settings", h.UpdateSettings)
 	})
 
 	// HTTP server
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%s", cfg.Port),
+		Addr:         fmt.Sprintf(":%s", cfg.Frontend.Server.Port),
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
@@ -77,7 +79,7 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		slog.Info("Starting server", "port", cfg.Port, "collector_url", cfg.CollectorURL)
+		slog.Info("Starting server", "port", cfg.Frontend.Server.Port, "collector_url", cfg.Frontend.CollectorURL)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(fmt.Sprintf("Server failed to start: %v", err))
 		}
@@ -97,28 +99,4 @@ func main() {
 	}
 
 	slog.Info("Server stopped")
-}
-
-// Config holds application configuration
-type Config struct {
-	Port         string
-	CollectorURL string
-	Environment  string
-}
-
-// loadConfig loads configuration from environment variables
-func loadConfig() Config {
-	return Config{
-		Port:         getEnv("PORT", "3000"),
-		CollectorURL: getEnv("COLLECTOR_URL", "http://localhost:8080"),
-		Environment:  getEnv("ENV", "development"),
-	}
-}
-
-// getEnv retrieves an environment variable or returns a default value
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }

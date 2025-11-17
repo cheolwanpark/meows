@@ -1,36 +1,13 @@
 services:
-  collector-init:
-    image: alpine:3.20
-    container_name: meows-collector-init
-    volumes:
-      - collector-data:/data
-    command:
-      - sh
-      - -c
-      - |
-        echo "Setting ownership to 65532:65532 (distroless nonroot user)..."
-        chown -R 65532:65532 /data
-        echo "Permissions set successfully. Current ownership:"
-        ls -ld /data
-    restart: "no"
-
   collector:
     build:
       context: .
       dockerfile: docker/Dockerfile.collector
     container_name: meows-collector
-    environment:
-      - DB_PATH=${DB_PATH:-/data/meows.db}
-      - PORT=8080
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - MEOWS_ENCRYPTION_KEY=${MEOWS_ENCRYPTION_KEY:?MEOWS_ENCRYPTION_KEY must be set in .env file}
-      - ENABLE_SWAGGER=${ENABLE_SWAGGER:-true}
-      - MAX_COMMENT_DEPTH=${MAX_COMMENT_DEPTH:-5}
+    env_file:
+      - .env
     volumes:
-      - collector-data:/data
-    depends_on:
-      collector-init:
-        condition: service_completed_successfully
+      - data:/data
     restart: unless-stopped
 
   frontend:
@@ -38,18 +15,18 @@ services:
       context: .
       dockerfile: docker/Dockerfile.frontend
     container_name: meows-frontend
+    env_file:
+      - .env
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
-    environment:
-      - PORT=3000
-      - ENV=${ENV:-production}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - COLLECTOR_URL=${COLLECTOR_URL:-http://collector:8080}
-      - CSRF_KEY=${CSRF_KEY:?CSRF_KEY must be set in .env file}
+      - "3000:3000"
     depends_on:
       - collector
     restart: unless-stopped
 
 volumes:
-  collector-data:
+  data:
     driver: local
+    driver_opts:
+      type: none
+      device: ${PWD}/data
+      o: bind

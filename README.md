@@ -6,7 +6,7 @@ A lightweight, self-hosted news aggregator that collects articles from Reddit an
 
 - Multi-source support (Reddit, Semantic Scholar)
 - Global cron scheduling for automated collection
-- AES-256-GCM encrypted credentials
+- YAML-based configuration with file-based credentials
 - Nested Reddit comments
 - Responsive web UI with dark mode
 - REST API with Swagger documentation
@@ -31,14 +31,21 @@ A lightweight, self-hosted news aggregator that collects articles from Reddit an
 ## Quick Start
 
 ```bash
-# Clone and configure
+# Clone the repository
 git clone <repository-url>
 cd meows
-cp .env.example .env
 
-# Generate keys and edit .env
-openssl rand -base64 32 | cut -c1-32  # Copy to MEOWS_ENCRYPTION_KEY
-openssl rand -hex 32                   # Copy to CSRF_KEY
+# Create data directory
+mkdir -p data
+
+# Create and configure .env
+cp .env.example .env
+chmod 600 .env
+
+# Edit .env with your credentials
+# 1. Add Reddit OAuth credentials from https://www.reddit.com/prefs/apps
+# 2. Add Semantic Scholar API key from https://www.semanticscholar.org/product/api
+vim .env
 
 # Start services
 docker compose up -d
@@ -47,25 +54,38 @@ docker compose up -d
 **Access:**
 - Frontend: http://localhost:3000
 - API: http://localhost:8080
-- API Docs: http://localhost:8080/docs/index.html
+- API Docs: http://localhost:8080/swagger/index.html
 
 ## Configuration
 
-**Required environment variables:**
-- `MEOWS_ENCRYPTION_KEY` - 32-byte key for credential encryption
-- `CSRF_KEY` - Random key for CSRF protection
+Meows uses environment variables configured through a `.env` file for all settings.
 
-**Optional:** `DB_PATH`, `FRONTEND_PORT`, `LOG_LEVEL`, `MAX_COMMENT_DEPTH`, `ENABLE_SWAGGER`
+**Setup:**
+```bash
+# Copy example and set permissions
+cp .env.example .env
+chmod 600 .env  # Protect credentials
+```
 
-**Web UI settings** (⚙️ icon):
-- Cron schedule (default: `0 */6 * * *`)
-- Rate limits per source type
-- API credentials (Reddit OAuth, Semantic Scholar)
+**Configuration structure** (`.env`):
+- **Collector settings**: Server port, database path, logging, Swagger UI
+- **Global schedule**: Cron expression for all sources (e.g., `0 */6 * * *` = every 6 hours)
+- **Rate limits**: Delays between API requests per source type (Reddit, Semantic Scholar)
+- **Credentials**: Reddit OAuth credentials and Semantic Scholar API key (shared by all sources)
+- **Frontend settings**: Server port, collector URL
+
+See `.env.example` for detailed documentation of all environment variables.
+
+**Important:**
+- ⚠️ **Security**: Credentials are stored in plain text. Use `chmod 600 .env` to restrict access.
+- 🔄 **Restart required**: Config changes require `docker compose restart` to take effect.
+- 📝 **Format**: Use KEY=value format, no quotes needed unless value contains spaces.
 
 **Adding sources:**
-1. Go to Sources page
-2. Select type and configure filters
-3. Add source
+1. Configure global credentials in `.env`
+2. Go to Sources page in the web UI
+3. Select type (Reddit/Semantic Scholar) and configure filters
+4. Add source (uses global credentials from config file)
 
 ## API Endpoints
 

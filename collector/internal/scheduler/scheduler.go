@@ -8,42 +8,34 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
 	"github.com/cheolwanpark/meows/collector/internal/source"
 	"github.com/robfig/cron/v3"
 	"golang.org/x/time/rate"
 )
 
-// Scheduler manages scheduled crawling jobs with global configuration
+// Scheduler manages scheduled crawling jobs with configuration from file
 type Scheduler struct {
 	cron            *cron.Cron
 	db              *db.DB
-	maxCommentDepth int
+	config          *config.CollectorConfig   // Global configuration from file
+	rateLimiters    map[string]*rate.Limiter  // Long-lived rate limiters per source type
 	mu              sync.RWMutex
-	reloadMu        sync.Mutex // Serializes reload operations to prevent concurrent reloads
-	globalConfig    *db.GlobalConfigDTO
-	rateLimiters    map[string]*rate.Limiter // Long-lived rate limiters per source type
 	isRunning       bool
 }
 
-// New creates a new Scheduler
-func New(database *db.DB, maxCommentDepth int) (*Scheduler, error) {
-	// Load global config from database (without credentials)
-	globalConfig, err := database.GetGlobalConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load global config: %w", err)
-	}
-
+// New creates a new Scheduler with configuration from file
+func New(cfg *config.CollectorConfig, database *db.DB) (*Scheduler, error) {
 	s := &Scheduler{
-		db:              database,
-		maxCommentDepth: maxCommentDepth,
-		globalConfig:    globalConfig,
+		db:     database,
+		config: cfg,
 	}
 
-	// Create long-lived rate limiters
-	s.rateLimiters = s.createRateLimiters(globalConfig)
+	// Create long-lived rate limiters from config
+	s.rateLimiters = s.createRateLimiters()
 
-	// Create cron instance (will be populated in Start)
+	// Create cron instance with schedule from config
 	if err := s.createCron(); err != nil {
 		return nil, err
 	}
@@ -51,7 +43,7 @@ func New(database *db.DB, maxCommentDepth int) (*Scheduler, error) {
 	return s, nil
 }
 
-// createCron creates a new cron instance with the current global config
+// createCron creates a new cron instance with schedule from config file
 func (s *Scheduler) createCron() error {
 	s.cron = cron.New(
 		cron.WithChain(
@@ -60,8 +52,8 @@ func (s *Scheduler) createCron() error {
 		),
 	)
 
-	// Register the single global job
-	_, err := s.cron.AddFunc(s.globalConfig.CronExpr, func() {
+	// Register the single global job with schedule from config
+	_, err := s.cron.AddFunc(s.config.Schedule.CronExpr, func() {
 		if err := s.runAllSources(); err != nil {
 			log.Printf("Global crawl job failed: %v", err)
 		}
@@ -70,7 +62,7 @@ func (s *Scheduler) createCron() error {
 		return fmt.Errorf("failed to register global cron job: %w", err)
 	}
 
-	log.Printf("Registered global cron job with schedule: %s", s.globalConfig.CronExpr)
+	log.Printf("Registered global cron job with schedule: %s", s.config.Schedule.CronExpr)
 	return nil
 }
 
@@ -93,109 +85,7 @@ func (s *Scheduler) Stop(ctx context.Context) error {
 	}
 }
 
-// Reload reloads the global configuration and restarts the cron scheduler.
-// NOTE: This function is not re-entrant and MUST NOT be called from a job
-// managed by this scheduler, as it will cause a deadlock.
-func (s *Scheduler) Reload() error {
-	// Serialize reload operations - only one reload at a time
-	s.reloadMu.Lock()
-	defer s.reloadMu.Unlock()
-
-	// Load and validate new config BEFORE stopping anything
-	log.Printf("Loading new configuration...")
-	newConfig, err := s.db.GetGlobalConfig()
-	if err != nil {
-		return fmt.Errorf("failed to load global config: %w", err)
-	}
-
-	// Validate cron expression before stopping scheduler
-	log.Printf("Validating new cron expression: %s", newConfig.CronExpr)
-	_, err = cron.ParseStandard(newConfig.CronExpr)
-	if err != nil {
-		return fmt.Errorf("invalid cron expression '%s': %w", newConfig.CronExpr, err)
-	}
-
-	// Save old state for potential rollback
-	s.mu.RLock()
-	oldCron := s.cron
-	oldConfig := s.globalConfig
-	oldRateLimiters := s.rateLimiters
-	s.mu.RUnlock()
-
-	// Stop old scheduler WITHOUT holding write lock (prevents deadlock)
-	log.Printf("Stopping current scheduler...")
-	stopCtx := oldCron.Stop()
-
-	// Wait for all jobs to finish with timeout
-	select {
-	case <-stopCtx.Done():
-		log.Printf("Scheduler stopped successfully")
-	case <-time.After(30 * time.Second):
-		return fmt.Errorf("timeout waiting for running jobs to stop")
-	}
-
-	// Create new rate limiters
-	newRateLimiters := s.createRateLimiters(newConfig)
-
-	// Create new cron instance
-	newCron := cron.New(
-		cron.WithChain(
-			cron.SkipIfStillRunning(cron.DefaultLogger),
-			cron.Recover(cron.DefaultLogger),
-		),
-	)
-
-	// Register global job with new cron
-	_, err = newCron.AddFunc(newConfig.CronExpr, func() {
-		if err := s.runAllSources(); err != nil {
-			log.Printf("Global crawl job failed: %v", err)
-		}
-	})
-	if err != nil {
-		// Registration failed - create fresh cron with old config and rollback
-		log.Printf("Failed to register new cron job, rolling back...")
-
-		rollbackCron := cron.New(
-			cron.WithChain(
-				cron.SkipIfStillRunning(cron.DefaultLogger),
-				cron.Recover(cron.DefaultLogger),
-			),
-		)
-		_, rollbackErr := rollbackCron.AddFunc(oldConfig.CronExpr, func() {
-			if err := s.runAllSources(); err != nil {
-				log.Printf("Global crawl job failed: %v", err)
-			}
-		})
-		if rollbackErr != nil {
-			log.Printf("FATAL: Failed to rollback scheduler - system may be in broken state!")
-			return fmt.Errorf("failed to register cron job AND rollback failed: original=%w, rollback=%v", err, rollbackErr)
-		}
-
-		// Rollback successful - restore old state and start rollback cron
-		s.mu.Lock()
-		s.cron = rollbackCron
-		s.globalConfig = oldConfig
-		s.rateLimiters = oldRateLimiters
-		s.mu.Unlock()
-
-		rollbackCron.Start()
-		log.Printf("Rollback successful - scheduler restored to previous configuration")
-		return fmt.Errorf("failed to register cron job, rolled back to old config: %w", err)
-	}
-
-	// Success - atomically swap in new state
-	s.mu.Lock()
-	s.cron = newCron
-	s.globalConfig = newConfig
-	s.rateLimiters = newRateLimiters
-	s.mu.Unlock()
-
-	// Start new scheduler
-	newCron.Start()
-	log.Printf("Scheduler reloaded successfully with schedule: %s", newConfig.CronExpr)
-
-	return nil
-}
+// Note: Config reload is not supported. Changes to .config.yaml require service restart.
 
 // RunNow manually triggers a crawl for all sources
 func (s *Scheduler) RunNow() error {
@@ -393,8 +283,8 @@ func (s *Scheduler) runSourcesSequentially(sources []*db.Source, limiter *rate.L
 // runSourceWithTimeout executes a single source fetch with timeout
 // Returns fetched articles and comments for centralized storage
 func (s *Scheduler) runSourceWithTimeout(ctx context.Context, src *db.Source, limiter *rate.Limiter) ([]db.Article, []db.Comment, error) {
-	// Create source instance (Factory loads fresh global config with credentials from DB)
-	sourceImpl, err := source.Factory(src, s.db, limiter, s.maxCommentDepth)
+	// Create source instance with credentials from config file
+	sourceImpl, err := source.Factory(src, &s.config.Credentials, limiter, s.config.Server.MaxCommentDepth)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create source: %w", err)
 	}
@@ -415,16 +305,16 @@ func (s *Scheduler) runSourceWithTimeout(ctx context.Context, src *db.Source, li
 	return articles, comments, nil
 }
 
-// createRateLimiters creates rate limiters for each source type based on provided config
-func (s *Scheduler) createRateLimiters(config *db.GlobalConfigDTO) map[string]*rate.Limiter {
+// createRateLimiters creates rate limiters for each source type from config file
+func (s *Scheduler) createRateLimiters() map[string]*rate.Limiter {
 	limiters := make(map[string]*rate.Limiter)
 
 	// Reddit rate limiter (burst=10 to allow natural bursting within rate limit)
-	redditReqPerSec := 1000.0 / float64(config.RedditRateLimitDelayMs)
+	redditReqPerSec := 1000.0 / float64(s.config.RateLimits.RedditDelayMs)
 	limiters["reddit"] = rate.NewLimiter(rate.Limit(redditReqPerSec), 10)
 
 	// Semantic Scholar rate limiter (burst=10)
-	s2ReqPerSec := 1000.0 / float64(config.SemanticScholarRateLimitDelayMs)
+	s2ReqPerSec := 1000.0 / float64(s.config.RateLimits.SemanticScholarDelayMs)
 	limiters["semantic_scholar"] = rate.NewLimiter(rate.Limit(s2ReqPerSec), 10)
 
 	return limiters
@@ -633,14 +523,10 @@ func (s *Scheduler) storeComments(comments []db.Comment) error {
 	return tx.Commit()
 }
 
-// GetSchedule returns the global schedule information
+// GetSchedule returns the global schedule information from config file
 func (s *Scheduler) GetSchedule() (*db.ScheduleEntry, error) {
-	s.mu.RLock()
-	globalConfig := s.globalConfig
-	s.mu.RUnlock()
-
-	// Parse cron expression
-	sched, err := cron.ParseStandard(globalConfig.CronExpr)
+	// Parse cron expression from config
+	sched, err := cron.ParseStandard(s.config.Schedule.CronExpr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid cron expression: %w", err)
 	}

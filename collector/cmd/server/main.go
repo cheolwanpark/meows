@@ -35,50 +35,46 @@ import (
 // @BasePath /
 // @schemes http
 func main() {
-	// Validate encryption key before starting
-	encKey := os.Getenv("MEOWS_ENCRYPTION_KEY")
-	if encKey == "" {
-		log.Fatal("FATAL: MEOWS_ENCRYPTION_KEY environment variable not set (required for credential encryption)")
-	}
-	if len(encKey) != 32 {
-		log.Fatalf("FATAL: MEOWS_ENCRYPTION_KEY must be exactly 32 bytes for AES-256, got %d bytes", len(encKey))
-	}
-	log.Println("Encryption key validated (32 bytes)")
-
-	// Load configuration
-	cfg, err := config.Load()
+	// Load configuration from environment variables
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
 	log.Printf("Starting collector service...")
-	log.Printf("Configuration: DB=%s, Port=%d, MaxCommentDepth=%d, LogLevel=%s",
-		cfg.DBPath, cfg.Port, cfg.MaxCommentDepth, cfg.LogLevel)
+	log.Printf("Configuration loaded from environment variables")
+	log.Printf("Server: DB=%s, Port=%d, MaxCommentDepth=%d, LogLevel=%s",
+		cfg.Collector.Server.DBPath, cfg.Collector.Server.Port,
+		cfg.Collector.Server.MaxCommentDepth, cfg.Collector.Server.LogLevel)
+	log.Printf("Schedule: %s", cfg.Collector.Schedule.CronExpr)
+	log.Printf("Rate limits: Reddit=%dms, S2=%dms",
+		cfg.Collector.RateLimits.RedditDelayMs,
+		cfg.Collector.RateLimits.SemanticScholarDelayMs)
 
 	// Initialize database
-	database, err := db.Init(cfg.DBPath)
+	database, err := db.Init(cfg.Collector.Server.DBPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer database.Close()
 	log.Println("Database initialized")
 
-	// Initialize scheduler with global configuration
-	sched, err := scheduler.New(database, cfg.MaxCommentDepth)
+	// Initialize scheduler with global configuration from environment variables
+	sched, err := scheduler.New(&cfg.Collector, database)
 	if err != nil {
 		log.Fatalf("Failed to initialize scheduler: %v", err)
 	}
 
-	// Start scheduler (loads sources dynamically, credentials from encrypted DB)
+	// Start scheduler (loads sources from DB, uses environment variables for schedule/credentials)
 	sched.Start()
-	log.Println("Scheduler started with global configuration")
+	log.Println("Scheduler started")
 
 	// Setup HTTP router
 	router := api.SetupRouter(database, sched)
 
 	// Create HTTP server
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Port),
+		Addr:         fmt.Sprintf(":%d", cfg.Collector.Server.Port),
 		Handler:      router,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,

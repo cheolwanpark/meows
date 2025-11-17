@@ -2,68 +2,95 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
+	"strings"
+
+	"github.com/robfig/cron/v3"
 )
 
-// Config holds application configuration loaded from environment variables
-// Note: Credentials are now stored in the database (encrypted), not env vars
-// Only MEOWS_ENCRYPTION_KEY should be set as an env var (32 bytes for AES-256)
+// Config represents the entire application configuration
 type Config struct {
-	// Database configuration
-	DBPath string
-
-	// HTTP server configuration
-	Port int
-
-	// Crawler configuration
-	MaxCommentDepth int
-
-	// Logging
-	LogLevel string
+	Collector CollectorConfig
 }
 
-// Load reads configuration from environment variables with sensible defaults
-func Load() (*Config, error) {
+// CollectorConfig represents collector-specific configuration
+type CollectorConfig struct {
+	Server      ServerConfig
+	Schedule    ScheduleConfig
+	RateLimits  RateLimitsConfig
+	Credentials CredentialsConfig
+}
+
+// ServerConfig represents collector server settings
+type ServerConfig struct {
+	Port            int
+	DBPath          string
+	LogLevel        string
+	EnableSwagger   bool
+	MaxCommentDepth int
+}
+
+// ScheduleConfig represents scheduling configuration
+type ScheduleConfig struct {
+	CronExpr string
+}
+
+// RateLimitsConfig represents rate limiting configuration per source type
+type RateLimitsConfig struct {
+	RedditDelayMs          int
+	SemanticScholarDelayMs int
+}
+
+// CredentialsConfig represents global credentials shared by all sources
+type CredentialsConfig struct {
+	RedditClientID        string
+	RedditClientSecret    string
+	RedditUsername        string
+	RedditPassword        string
+	SemanticScholarAPIKey string
+}
+
+// LoadConfig loads and validates the configuration from environment variables
+func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		DBPath:          getEnv("DB_PATH", "./meows.db"),
-		Port:            getEnvInt("PORT", 8080),
-		MaxCommentDepth: getEnvInt("MAX_COMMENT_DEPTH", 5),
-		LogLevel:        getEnv("LOG_LEVEL", "info"),
+		Collector: CollectorConfig{
+			Server: ServerConfig{
+				Port:            getEnvAsInt("COLLECTOR_PORT", 8080),
+				DBPath:          getEnv("COLLECTOR_DB_PATH", "/data/meows.db"),
+				LogLevel:        getEnv("COLLECTOR_LOG_LEVEL", "info"),
+				EnableSwagger:   getEnvAsBool("COLLECTOR_ENABLE_SWAGGER", true),
+				MaxCommentDepth: getEnvAsInt("COLLECTOR_MAX_COMMENT_DEPTH", 5),
+			},
+			Schedule: ScheduleConfig{
+				CronExpr: getEnv("COLLECTOR_CRON_EXPR", "0 */6 * * *"),
+			},
+			RateLimits: RateLimitsConfig{
+				RedditDelayMs:          getEnvAsInt("COLLECTOR_REDDIT_DELAY_MS", 2000),
+				SemanticScholarDelayMs: getEnvAsInt("COLLECTOR_SEMANTIC_SCHOLAR_DELAY_MS", 1000),
+			},
+			Credentials: CredentialsConfig{
+				RedditClientID:        getEnv("COLLECTOR_REDDIT_CLIENT_ID", ""),
+				RedditClientSecret:    getEnv("COLLECTOR_REDDIT_CLIENT_SECRET", ""),
+				RedditUsername:        getEnv("COLLECTOR_REDDIT_USERNAME", ""),
+				RedditPassword:        getEnv("COLLECTOR_REDDIT_PASSWORD", ""),
+				SemanticScholarAPIKey: getEnv("COLLECTOR_SEMANTIC_SCHOLAR_API_KEY", ""),
+			},
+		},
 	}
 
-	// Validate configuration
+	// Validate
 	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
+		return nil, fmt.Errorf("config validation failed: %w", err)
 	}
 
 	return cfg, nil
 }
 
-// Validate checks if the configuration is valid
-func (c *Config) Validate() error {
-	if c.Port < 1 || c.Port > 65535 {
-		return fmt.Errorf("port must be between 1 and 65535, got %d", c.Port)
-	}
+// Helper functions for environment variable parsing
 
-	if c.MaxCommentDepth < 0 {
-		return fmt.Errorf("max comment depth must be non-negative, got %d", c.MaxCommentDepth)
-	}
-
-	validLogLevels := map[string]bool{
-		"debug": true,
-		"info":  true,
-		"warn":  true,
-		"error": true,
-	}
-	if !validLogLevels[c.LogLevel] {
-		return fmt.Errorf("invalid log level: %s (must be debug, info, warn, or error)", c.LogLevel)
-	}
-
-	return nil
-}
-
-// getEnv retrieves an environment variable or returns a default value
+// getEnv returns the environment variable value or the default value if not set
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -71,12 +98,104 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-// getEnvInt retrieves an integer environment variable or returns a default value
-func getEnvInt(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
+// getEnvAsInt returns the environment variable as an integer or the default value
+// Logs a warning and returns default if the value cannot be parsed
+func getEnvAsInt(key string, defaultValue int) int {
+	valueStr := os.Getenv(key)
+	if valueStr == "" {
+		return defaultValue
 	}
-	return defaultValue
+
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		log.Printf("Warning: Invalid integer for %s=%s, using default %d", key, valueStr, defaultValue)
+		return defaultValue
+	}
+
+	return value
+}
+
+// getEnvAsBool returns the environment variable as a boolean or the default value
+// Accepts: true/false, 1/0, yes/no, on/off (case-insensitive)
+// Logs a warning and returns default if the value cannot be parsed
+func getEnvAsBool(key string, defaultValue bool) bool {
+	valueStr := os.Getenv(key)
+	if valueStr == "" {
+		return defaultValue
+	}
+
+	// Normalize to lowercase for comparison
+	valueStr = strings.ToLower(strings.TrimSpace(valueStr))
+
+	switch valueStr {
+	case "true", "1", "yes", "on":
+		return true
+	case "false", "0", "no", "off":
+		return false
+	default:
+		log.Printf("Warning: Invalid boolean for %s=%s, using default %v", key, valueStr, defaultValue)
+		return defaultValue
+	}
+}
+
+// Validate validates the entire configuration
+func (c *Config) Validate() error {
+	if err := c.Collector.Validate(); err != nil {
+		return fmt.Errorf("collector config: %w", err)
+	}
+	return nil
+}
+
+// Validate validates collector configuration
+func (c *CollectorConfig) Validate() error {
+	// Server validation
+	if c.Server.Port <= 0 || c.Server.Port > 65535 {
+		return fmt.Errorf("COLLECTOR_PORT must be between 1 and 65535, got %d", c.Server.Port)
+	}
+	if c.Server.DBPath == "" {
+		return fmt.Errorf("COLLECTOR_DB_PATH is required")
+	}
+	validLogLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
+	if !validLogLevels[c.Server.LogLevel] {
+		return fmt.Errorf("COLLECTOR_LOG_LEVEL must be one of [debug, info, warn, error], got '%s'", c.Server.LogLevel)
+	}
+	if c.Server.MaxCommentDepth < 0 {
+		return fmt.Errorf("COLLECTOR_MAX_COMMENT_DEPTH must be non-negative, got %d", c.Server.MaxCommentDepth)
+	}
+
+	// Schedule validation
+	if c.Schedule.CronExpr == "" {
+		return fmt.Errorf("COLLECTOR_CRON_EXPR is required")
+	}
+	// Validate cron expression syntax
+	if _, err := cron.ParseStandard(c.Schedule.CronExpr); err != nil {
+		return fmt.Errorf("COLLECTOR_CRON_EXPR is invalid: %w", err)
+	}
+
+	// Rate limits validation
+	if c.RateLimits.RedditDelayMs < 0 {
+		return fmt.Errorf("COLLECTOR_REDDIT_DELAY_MS must be non-negative, got %d", c.RateLimits.RedditDelayMs)
+	}
+	if c.RateLimits.SemanticScholarDelayMs < 0 {
+		return fmt.Errorf("COLLECTOR_SEMANTIC_SCHOLAR_DELAY_MS must be non-negative, got %d", c.RateLimits.SemanticScholarDelayMs)
+	}
+
+	// Credentials validation (check non-empty for required fields)
+	if c.Credentials.RedditClientID == "" {
+		return fmt.Errorf("COLLECTOR_REDDIT_CLIENT_ID is required")
+	}
+	if c.Credentials.RedditClientSecret == "" {
+		return fmt.Errorf("COLLECTOR_REDDIT_CLIENT_SECRET is required")
+	}
+	if c.Credentials.RedditUsername == "" {
+		return fmt.Errorf("COLLECTOR_REDDIT_USERNAME is required")
+	}
+	if c.Credentials.RedditPassword == "" {
+		return fmt.Errorf("COLLECTOR_REDDIT_PASSWORD is required")
+	}
+	if c.Credentials.SemanticScholarAPIKey == "" {
+		return fmt.Errorf("COLLECTOR_SEMANTIC_SCHOLAR_API_KEY is required")
+	}
+
+	return nil
 }
