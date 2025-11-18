@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/cheolwanpark/meows/collector/internal/db"
-	"github.com/cheolwanpark/meows/collector/internal/profile"
+	"github.com/cheolwanpark/meows/collector/internal/personalization"
 	"github.com/cheolwanpark/meows/collector/internal/scheduler"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -20,11 +20,11 @@ import (
 type Handler struct {
 	db             *db.DB
 	scheduler      *scheduler.Scheduler
-	profileService *profile.UpdateService
+	profileService *personalization.UpdateService
 }
 
 // NewHandler creates a new Handler
-func NewHandler(database *db.DB, sched *scheduler.Scheduler, profService *profile.UpdateService) *Handler {
+func NewHandler(database *db.DB, sched *scheduler.Scheduler, profService *personalization.UpdateService) *Handler {
 	return &Handler{
 		db:             database,
 		scheduler:      sched,

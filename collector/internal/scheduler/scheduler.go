@@ -11,7 +11,7 @@ import (
 
 	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
-	"github.com/cheolwanpark/meows/collector/internal/profile"
+	"github.com/cheolwanpark/meows/collector/internal/personalization"
 	"github.com/cheolwanpark/meows/collector/internal/source"
 	"github.com/robfig/cron/v3"
 	"golang.org/x/time/rate"
@@ -23,13 +23,13 @@ type Scheduler struct {
 	db              *db.DB
 	config          *config.CollectorConfig   // Global configuration from file
 	rateLimiters    map[string]*rate.Limiter  // Long-lived rate limiters per source type
-	profileService  *profile.UpdateService    // Profile update service
+	profileService  *personalization.UpdateService    // Profile update service
 	mu              sync.RWMutex
 	isRunning       bool
 }
 
 // New creates a new Scheduler with configuration from file
-func New(cfg *config.CollectorConfig, database *db.DB, profService *profile.UpdateService) (*Scheduler, error) {
+func New(cfg *config.CollectorConfig, database *db.DB, profService *personalization.UpdateService) (*Scheduler, error) {
 	s := &Scheduler{
 		db:             database,
 		config:         cfg,

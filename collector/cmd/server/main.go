@@ -15,7 +15,7 @@ import (
 	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
 	"github.com/cheolwanpark/meows/collector/internal/gemini"
-	"github.com/cheolwanpark/meows/collector/internal/profile"
+	"github.com/cheolwanpark/meows/collector/internal/personalization"
 	"github.com/cheolwanpark/meows/collector/internal/scheduler"
 )
 
@@ -76,7 +76,7 @@ func main() {
 	log.Println("Gemini client initialized")
 
 	// Initialize profile service with milestone thresholds from config
-	profileService := profile.NewUpdateService(
+	profileService := personalization.NewUpdateService(
 		database,
 		geminiClient,
 		cfg.Collector.Profile.MilestoneThreshold1,

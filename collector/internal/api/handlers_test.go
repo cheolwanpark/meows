@@ -1,12 +1,15 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
+	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
+	"github.com/cheolwanpark/meows/collector/internal/gemini"
+	"github.com/cheolwanpark/meows/collector/internal/personalization"
 	"github.com/cheolwanpark/meows/collector/internal/scheduler"
 	_ "github.com/ncruces/go-sqlite3/driver"
 	_ "github.com/ncruces/go-sqlite3/embed"
@@ -23,15 +26,55 @@ func setupTestDB(t *testing.T) *db.DB {
 	return database
 }
 
+// setupTestConfig creates a minimal test configuration
+func setupTestConfig() *config.CollectorConfig {
+	return &config.CollectorConfig{
+		Server: config.ServerConfig{
+			DBPath:          ":memory:",
+			Port:            8080,
+			MaxCommentDepth: 5,
+			LogLevel:        "info",
+		},
+		Schedule: config.ScheduleConfig{
+			CronExpr: "0 0 * * *",
+		},
+		RateLimits: config.RateLimitsConfig{
+			RedditDelayMs:          1000,
+			SemanticScholarDelayMs: 1000,
+		},
+		Profile: config.ProfileConfig{
+			MilestoneThreshold1: 3,
+			MilestoneThreshold2: 10,
+			MilestoneThreshold3: 20,
+		},
+		Gemini: config.GeminiConfig{
+			APIKey: "", // Empty for tests
+		},
+	}
+}
+
+// setupTestProfileService creates a test profile service (with no-op Gemini client)
+func setupTestProfileService(t *testing.T, database *db.DB) *personalization.UpdateService {
+	// Create a Gemini client with empty API key (will fail if actually called, but tests don't need it)
+	geminiClient, err := gemini.NewClient(context.Background(), "")
+	if err != nil {
+		// For tests, we can use nil since profile service isn't actually called
+		return personalization.NewUpdateService(database, nil, 3, 10, 20)
+	}
+	return personalization.NewUpdateService(database, geminiClient, 3, 10, 20)
+}
+
 func TestDeleteSourceByTypeAndExternalID_InvalidType(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched, err := scheduler.New(database, 5)
+	cfg := setupTestConfig()
+	profService := setupTestProfileService(t, database)
+	sched, err := scheduler.New(cfg, database, profService)
 	if err != nil {
 		t.Fatalf("Failed to create scheduler: %v", err)
 	}
-	router := SetupRouter(database, sched)
+	router := SetupRouter(database, sched, profService)
 
 	req := httptest.NewRequest("DELETE", "/sources/invalid_type/test", nil)
 	w := httptest.NewRecorder()
@@ -47,11 +90,13 @@ func TestDeleteSourceByTypeAndExternalID_EmptyExternalID(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched, err := scheduler.New(database, 5)
+	cfg := setupTestConfig()
+	profService := setupTestProfileService(t, database)
+	sched, err := scheduler.New(cfg, database, profService)
 	if err != nil {
 		t.Fatalf("Failed to create scheduler: %v", err)
 	}
-	router := SetupRouter(database, sched)
+	router := SetupRouter(database, sched, profService)
 
 	req := httptest.NewRequest("DELETE", "/sources/reddit/", nil)
 	w := httptest.NewRecorder()
@@ -68,11 +113,13 @@ func TestDeleteSourceByTypeAndExternalID_ExternalIDWithSlash(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched, err := scheduler.New(database, 5)
+	cfg := setupTestConfig()
+	profService := setupTestProfileService(t, database)
+	sched, err := scheduler.New(cfg, database, profService)
 	if err != nil {
 		t.Fatalf("Failed to create scheduler: %v", err)
 	}
-	router := SetupRouter(database, sched)
+	router := SetupRouter(database, sched, profService)
 
 	req := httptest.NewRequest("DELETE", "/sources/reddit/test/with/slash", nil)
 	w := httptest.NewRecorder()
@@ -89,11 +136,13 @@ func TestDeleteSourceByTypeAndExternalID_NotFound(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched, err := scheduler.New(database, 5)
+	cfg := setupTestConfig()
+	profService := setupTestProfileService(t, database)
+	sched, err := scheduler.New(cfg, database, profService)
 	if err != nil {
 		t.Fatalf("Failed to create scheduler: %v", err)
 	}
-	router := SetupRouter(database, sched)
+	router := SetupRouter(database, sched, profService)
 
 	req := httptest.NewRequest("DELETE", "/sources/reddit/nonexistent", nil)
 	w := httptest.NewRecorder()
@@ -109,21 +158,32 @@ func TestDeleteSourceByTypeAndExternalID_Success(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	sched, err := scheduler.New(database, 5)
+	cfg := setupTestConfig()
+	profService := setupTestProfileService(t, database)
+	sched, err := scheduler.New(cfg, database, profService)
 	if err != nil {
 		t.Fatalf("Failed to create scheduler: %v", err)
 	}
 
+	// Insert a test profile first
+	_, err = database.Exec(`
+		INSERT INTO profiles (id, nickname, user_description, created_at)
+		VALUES ('test-profile-id', 'testuser', 'Test user', datetime('now'))
+	`)
+	if err != nil {
+		t.Fatalf("Failed to insert test profile: %v", err)
+	}
+
 	// Insert a test source
 	_, err = database.Exec(`
-		INSERT INTO sources (id, type, external_id, config, status, created_at)
-		VALUES ('test-id', 'reddit', 'golang', '{"subreddit":"golang"}', 'idle', datetime('now'))
+		INSERT INTO sources (id, type, external_id, profile_id, config, status, created_at)
+		VALUES ('test-id', 'reddit', 'golang', 'test-profile-id', '{"subreddit":"golang"}', 'idle', datetime('now'))
 	`)
 	if err != nil {
 		t.Fatalf("Failed to insert test source: %v", err)
 	}
 
-	router := SetupRouter(database, sched)
+	router := SetupRouter(database, sched, profService)
 
 	req := httptest.NewRequest("DELETE", "/sources/reddit/golang", nil)
 	w := httptest.NewRecorder()
@@ -142,109 +202,5 @@ func TestDeleteSourceByTypeAndExternalID_Success(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("Expected source to be deleted, but found %d rows", count)
-	}
-}
-
-func TestGetGlobalConfig(t *testing.T) {
-	database := setupTestDB(t)
-	defer database.Close()
-
-	sched, err := scheduler.New(database, 5)
-	if err != nil {
-		t.Fatalf("Failed to create scheduler: %v", err)
-	}
-	router := SetupRouter(database, sched)
-
-	req := httptest.NewRequest("GET", "/config", nil)
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
-	}
-
-	// Verify response contains expected fields
-	body := w.Body.String()
-	if !strings.Contains(body, "cron_expr") {
-		t.Errorf("Expected response to contain 'cron_expr', got: %s", body)
-	}
-}
-
-func TestUpdateGlobalConfig_Valid(t *testing.T) {
-	database := setupTestDB(t)
-	defer database.Close()
-
-	sched, err := scheduler.New(database, 5)
-	if err != nil {
-		t.Fatalf("Failed to create scheduler: %v", err)
-	}
-	router := SetupRouter(database, sched)
-
-	// Test valid update
-	reqBody := `{"cron_expr":"0 */12 * * *","reddit_rate_limit_delay_ms":3000}`
-	req := httptest.NewRequest("PATCH", "/config", strings.NewReader(reqBody))
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
-	}
-
-	// Verify config was updated in database
-	config, err := database.GetGlobalConfig()
-	if err != nil {
-		t.Fatalf("Failed to get global config: %v", err)
-	}
-	if config.CronExpr != "0 */12 * * *" {
-		t.Errorf("Expected cron_expr to be '0 */12 * * *', got '%s'", config.CronExpr)
-	}
-	if config.RedditRateLimitDelayMs != 3000 {
-		t.Errorf("Expected reddit rate limit to be 3000, got %d", config.RedditRateLimitDelayMs)
-	}
-}
-
-func TestUpdateGlobalConfig_InvalidCron(t *testing.T) {
-	database := setupTestDB(t)
-	defer database.Close()
-
-	sched, err := scheduler.New(database, 5)
-	if err != nil {
-		t.Fatalf("Failed to create scheduler: %v", err)
-	}
-	router := SetupRouter(database, sched)
-
-	// Test invalid cron expression
-	reqBody := `{"cron_expr":"invalid cron"}`
-	req := httptest.NewRequest("PATCH", "/config", strings.NewReader(reqBody))
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("Expected status 400, got %d. Body: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestUpdateGlobalConfig_InvalidRateLimit(t *testing.T) {
-	database := setupTestDB(t)
-	defer database.Close()
-
-	sched, err := scheduler.New(database, 5)
-	if err != nil {
-		t.Fatalf("Failed to create scheduler: %v", err)
-	}
-	router := SetupRouter(database, sched)
-
-	// Test negative rate limit
-	reqBody := `{"reddit_rate_limit_delay_ms":-100}`
-	req := httptest.NewRequest("PATCH", "/config", strings.NewReader(reqBody))
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("Expected status 400, got %d. Body: %s", w.Code, w.Body.String())
 	}
 }

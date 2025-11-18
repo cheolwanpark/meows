@@ -109,7 +109,7 @@ See `.env.example` for detailed documentation of all environment variables.
 **Local development:**
 ```bash
 # Collector
-cd collector && export MEOWS_ENCRYPTION_KEY="your-32-byte-key" && go run cmd/server/main.go
+cd collector && go run cmd/server/main.go
 
 # Frontend (separate terminal)
 cd front && export CSRF_KEY="key" COLLECTOR_URL="http://localhost:8080" && go run cmd/server/main.go
@@ -123,7 +123,6 @@ cd front && templ generate && go build -o bin/frontend cmd/server/main.go
 
 ## Security
 
-- AES-256-GCM encrypted credentials at rest
 - No authentication (use reverse proxy for public deployment)
 - CSRF protection enabled
 - Configurable rate limiting
@@ -133,7 +132,6 @@ cd front && templ generate && go build -o bin/frontend cmd/server/main.go
 ```bash
 # Container exits
 docker compose logs collector
-echo -n "$MEOWS_ENCRYPTION_KEY" | wc -c  # Must be 32
 
 # Permission errors
 docker compose down -v && docker compose up -d

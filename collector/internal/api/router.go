@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/cheolwanpark/meows/collector/internal/db"
-	"github.com/cheolwanpark/meows/collector/internal/profile"
+	"github.com/cheolwanpark/meows/collector/internal/personalization"
 	"github.com/cheolwanpark/meows/collector/internal/scheduler"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -13,7 +13,7 @@ import (
 )
 
 // SetupRouter creates and configures the HTTP router
-func SetupRouter(database *db.DB, sched *scheduler.Scheduler, profService *profile.UpdateService) http.Handler {
+func SetupRouter(database *db.DB, sched *scheduler.Scheduler, profService *personalization.UpdateService) http.Handler {
 	r := chi.NewRouter()
 
 	// Middleware
