@@ -12,7 +12,7 @@ import (
 
 // setUpdatingStatus sets the profile status to 'updating' in a transaction
 func (s *UpdateService) setUpdatingStatus(ctx context.Context, profileID string) error {
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
@@ -95,7 +95,7 @@ func (s *UpdateService) fetchLikedArticles(ctx context.Context, profileID string
 
 // updateCharacterResult saves the generated character in an atomic transaction
 func (s *UpdateService) updateCharacterResult(ctx context.Context, profileID string, character string) error {
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}

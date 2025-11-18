@@ -53,12 +53,14 @@ func setupTestConfig() *config.CollectorConfig {
 	}
 }
 
-// setupTestProfileService creates a test profile service (with no-op Gemini client)
+// setupTestProfileService creates a test profile service for routing tests.
+// Nil Gemini client is safe because these tests only verify routing,
+// not character generation (which would use the Gemini client).
 func setupTestProfileService(t *testing.T, database *db.DB) *personalization.UpdateService {
-	// Create a Gemini client with empty API key (will fail if actually called, but tests don't need it)
+	// Try to create a Gemini client, but fall back to nil if empty API key fails
 	geminiClient, err := gemini.NewClient(context.Background(), "")
 	if err != nil {
-		// For tests, we can use nil since profile service isn't actually called
+		// Nil is acceptable since routing tests don't call UpdateCharacter()
 		return personalization.NewUpdateService(database, nil, 3, 10, 20)
 	}
 	return personalization.NewUpdateService(database, geminiClient, 3, 10, 20)
