@@ -66,12 +66,22 @@ func (c *Client) CountTokens(prompt string) (int, error) {
 }
 
 // GenerateContent calls Gemini API with retry logic and structured output parsing
-func (c *Client) GenerateContent(ctx context.Context, model string, prompt string) (string, error) {
+// If config is nil, uses default config with ResponseMIMEType set to "application/json"
+func (c *Client) GenerateContent(ctx context.Context, model string, prompt string, config *genai.GenerateContentConfig) (string, error) {
 	const (
 		maxRetries     = 3
 		baseDelay      = 1 * time.Second
 		requestTimeout = 30 * time.Second
 	)
+
+	// Use provided config or create default, always ensure ResponseMIMEType is set
+	if config == nil {
+		config = &genai.GenerateContentConfig{}
+	}
+	// Always enforce JSON response format regardless of config source
+	if config.ResponseMIMEType == "" {
+		config.ResponseMIMEType = "application/json"
+	}
 
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
@@ -87,19 +97,17 @@ func (c *Client) GenerateContent(ctx context.Context, model string, prompt strin
 
 		// Create context with timeout
 		reqCtx, cancel := context.WithTimeout(ctx, requestTimeout)
-		defer cancel()
 
-		// Call Gemini API
+		// Call Gemini API with provided or default config
 		result, err := c.client.Models.GenerateContent(
 			reqCtx,
 			model,
 			genai.Text(prompt),
-			&genai.GenerateContentConfig{
-				ResponseMIMEType: "application/json",
-			},
+			config,
 		)
 
 		if err != nil {
+			cancel() // Explicitly cancel instead of deferring to avoid accumulation
 			lastErr = fmt.Errorf("attempt %d failed: %w", attempt+1, err)
 			continue
 		}
@@ -107,6 +115,7 @@ func (c *Client) GenerateContent(ctx context.Context, model string, prompt strin
 		// Extract text from response
 		text := result.Text()
 		if text == "" {
+			cancel()
 			lastErr = fmt.Errorf("attempt %d: empty response from API", attempt+1)
 			continue
 		}
@@ -114,15 +123,18 @@ func (c *Client) GenerateContent(ctx context.Context, model string, prompt strin
 		// Parse JSON response
 		var charResp CharacterResponse
 		if err := json.Unmarshal([]byte(text), &charResp); err != nil {
+			cancel()
 			lastErr = fmt.Errorf("attempt %d: failed to parse JSON response: %w", attempt+1, err)
 			continue
 		}
 
 		if charResp.Character == "" {
+			cancel()
 			lastErr = fmt.Errorf("attempt %d: character field is empty", attempt+1)
 			continue
 		}
 
+		cancel() // Success path - clean up context
 		return charResp.Character, nil
 	}
 

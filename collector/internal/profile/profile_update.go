@@ -10,10 +10,32 @@ import (
 
 	"github.com/cheolwanpark/meows/collector/internal/db"
 	"github.com/cheolwanpark/meows/collector/internal/gemini"
+	"google.golang.org/genai"
 )
 
 const (
-	BASE_PROMPT_TEMPLATE = `You are a character narrator. Based on the user's preferences and reading habits, create a short, witty, and insightful character description (2-3 sentences).
+	// System instruction for structured, fact-based output
+	SYSTEM_INSTRUCTION = `You are a profile generator. Output must be valid JSON: {"character": "markdown content here"}
+
+Output Structure (Markdown inside character field):
+## User Profile
+[2-3 sentences restating ONLY what the user explicitly wrote in their self-description. Do not infer personality traits, demographics, or background from reading behavior]
+
+## Reading Interests
+[Bullet list of specific topics/themes extracted ONLY from the article titles and content previews provided below. List actual technologies, concepts, and subjects mentioned in those articles - not general categories]
+
+## Classification Keywords
+[Single line, comma-separated, lowercase keywords derived ONLY from the user's stated interests and article topics listed above. Do not add related terms not explicitly present]
+
+Rules:
+- User Profile: Restate the user's own words, do not interpret or embellish
+- Reading Interests: Extract ONLY from the specific articles shown in the prompt below
+- Classification Keywords: Use ONLY terms that appear in the profile or article titles/content
+- Do not invent topics, interests, or keywords based on assumptions
+- Keep User Profile to 2-3 sentences maximum`
+
+	// User prompt template with few-shot examples
+	BASE_PROMPT_TEMPLATE = `Generate a structured profile based on the following information.
 
 User's Self-Description: %s
 
@@ -22,7 +44,19 @@ Previous Character: %s
 Recent Articles Liked:
 %s
 
-Return JSON: {"character": "your description here"}`
+EXAMPLES OF CORRECT FORMAT:
+
+Example 1:
+Input: "Love sci-fi and fantasy. Interested in AI and machine learning."
+Articles: "GPT-4 Released", "Neural Network Basics", "The Expanse Season Finale"
+Output: {"character": "## User Profile\nA reader who loves science fiction and fantasy, interested in AI and machine learning.\n\n## Reading Interests\n- GPT-4\n- Neural networks\n- The Expanse (science fiction)\n\n## Classification Keywords\nsci-fi, fantasy, ai, machine learning, gpt-4, neural networks, the expanse"}
+
+Example 2:
+Input: "Software developer. Like learning about system design and Go programming."
+Articles: "Kubernetes Best Practices", "Go 1.21 Features", "Microservices Architecture"
+Output: {"character": "## User Profile\nA software developer who likes learning about system design and Go programming.\n\n## Reading Interests\n- Kubernetes best practices\n- Go 1.21 features and updates\n- Microservices architecture\n\n## Classification Keywords\ngo, golang, kubernetes, system design, microservices, go 1.21"}
+
+Now generate a structured profile. Return JSON format: {"character": "your markdown here"}`
 
 	ARTICLE_TEMPLATE = "- [%s]: %s\n"
 	CONTENT_PREVIEW  = 100 // Max characters for article content preview
@@ -168,7 +202,16 @@ func (s *UpdateService) UpdateCharacter(ctx context.Context, profileID string) {
 		}
 
 		// Step 4: Call Gemini API (no transaction during network I/O)
-		character, err := s.gemini.GenerateContent(apiCtx, gemini.FLASH, prompt)
+		// Create config with temperature tuning and system instruction
+		temperature := float32(0.3) // Reduced temperature to minimize creative hallucinations (not fully deterministic)
+		topP := float32(0.8)        // Standard diversity
+		config := &genai.GenerateContentConfig{
+			Temperature:       &temperature,
+			TopP:              &topP,
+			SystemInstruction: genai.NewContentFromText(SYSTEM_INSTRUCTION, ""), // Empty role for system instruction
+			ResponseMIMEType:  "application/json",
+		}
+		character, err := s.gemini.GenerateContent(apiCtx, gemini.FLASH, prompt, config)
 		if err != nil {
 			errorMsg := err.Error()
 			if apiCtx.Err() == context.DeadlineExceeded {
