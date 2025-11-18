@@ -50,6 +50,19 @@ func (db *DB) createSchema() error {
 	PRAGMA journal_mode=WAL;
 	PRAGMA busy_timeout=5000;
 
+	-- Profiles table (Netflix-style multi-profile support)
+	CREATE TABLE IF NOT EXISTS profiles (
+		id TEXT PRIMARY KEY,
+		nickname TEXT NOT NULL,
+		user_description TEXT,
+		character TEXT,
+		character_status TEXT DEFAULT 'pending',
+		character_error TEXT,
+		milestone TEXT DEFAULT 'init',
+		updated_at DATETIME,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
 	-- Sources table (per-source configuration)
 	-- Global config (schedule, credentials, rate limits) now in .config.yaml file
 	CREATE TABLE IF NOT EXISTS sources (
@@ -57,12 +70,14 @@ func (db *DB) createSchema() error {
 		type TEXT NOT NULL,
 		config TEXT NOT NULL,
 		external_id TEXT,
+		profile_id TEXT NOT NULL,
 		last_run_at DATETIME,
 		last_success_at DATETIME,
 		last_error TEXT,
 		status TEXT DEFAULT 'idle',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		UNIQUE(type, external_id)
+		FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
+		UNIQUE(type, external_id, profile_id)
 	);
 
 	-- Articles table
@@ -70,6 +85,7 @@ func (db *DB) createSchema() error {
 		id TEXT PRIMARY KEY,
 		source_id TEXT NOT NULL,
 		external_id TEXT NOT NULL,
+		profile_id TEXT NOT NULL,
 		title TEXT,
 		author TEXT,
 		content TEXT,
@@ -78,6 +94,7 @@ func (db *DB) createSchema() error {
 		metadata TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE,
+		FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
 		UNIQUE(source_id, external_id)
 	);
 
@@ -95,12 +112,28 @@ func (db *DB) createSchema() error {
 		UNIQUE(article_id, external_id)
 	);
 
+	-- Likes table (for article likes per profile)
+	CREATE TABLE IF NOT EXISTS likes (
+		id TEXT PRIMARY KEY,
+		profile_id TEXT NOT NULL,
+		article_id TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
+		FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+		UNIQUE(profile_id, article_id)
+	);
+
 	-- Indexes for performance
+	CREATE INDEX IF NOT EXISTS idx_profiles_milestone ON profiles(milestone);
+	CREATE INDEX IF NOT EXISTS idx_profiles_updated_at ON profiles(updated_at);
+	CREATE INDEX IF NOT EXISTS idx_sources_profile ON sources(profile_id);
 	CREATE INDEX IF NOT EXISTS idx_articles_source_time ON articles(source_id, written_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_articles_created ON articles(created_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_articles_profile_created ON articles(profile_id, created_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_comments_article ON comments(article_id);
 	CREATE INDEX IF NOT EXISTS idx_sources_status ON sources(status);
 	CREATE INDEX IF NOT EXISTS idx_sources_type ON sources(type);
+	CREATE INDEX IF NOT EXISTS idx_likes_profile_created ON likes(profile_id, created_at DESC);
 	`
 
 	_, err := db.Exec(schema)

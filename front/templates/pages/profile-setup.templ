@@ -1,0 +1,274 @@
+package pages
+
+import (
+	"github.com/cheolwanpark/meows/front/templates/layouts"
+	"github.com/cheolwanpark/meows/front/templates/components"
+)
+
+templ ProfileSetup(csrfToken string) {
+	@layouts.Base("Setup Profile", csrfToken, profileSetupContent(csrfToken))
+}
+
+templ profileSetupContent(csrfToken string) {
+	<div class="max-w-2xl mx-auto space-y-8" x-data="profileSetup()">
+		<!-- Header -->
+		<div class="text-center">
+			<h1 class="text-4xl font-serif font-bold mb-2">Welcome to Meows</h1>
+			<p class="text-muted-foreground text-lg">
+				Let's create your profile to get personalized news
+			</p>
+		</div>
+
+		<!-- Form (shown when status is 'idle') -->
+		<div x-show="status === 'idle'" class="bg-card border rounded-lg p-8 shadow-sm">
+			<form
+				hx-post="/api/profiles"
+				hx-trigger="submit"
+				@htmx:after-request="handleResponse($event)"
+				class="space-y-6"
+			>
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+
+				<!-- Nickname Field -->
+				<div>
+					<label for="nickname" class="block text-sm font-medium mb-2">
+						Nickname
+					</label>
+					<input
+						type="text"
+						id="nickname"
+						name="nickname"
+						required
+						maxlength="50"
+						placeholder="Tech Enthusiast"
+						class="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
+						:disabled="status !== 'idle'"
+					/>
+					<p class="text-xs text-muted-foreground mt-1">
+						How should we call you?
+					</p>
+				</div>
+
+				<!-- User Description Field -->
+				<div>
+					<label for="user_description" class="block text-sm font-medium mb-2">
+						Your Interests
+					</label>
+					<textarea
+						id="user_description"
+						name="user_description"
+						required
+						rows="4"
+						maxlength="500"
+						placeholder="I enjoy reading about Go, distributed systems, and open source software..."
+						class="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+						:disabled="status !== 'idle'"
+					></textarea>
+					<p class="text-xs text-muted-foreground mt-1">
+						Tell us what topics interest you. This helps us create your unique character profile.
+					</p>
+				</div>
+
+				<!-- Submit Button -->
+				<button
+					type="submit"
+					class="w-full bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					:disabled="status !== 'idle'"
+				>
+					Create Profile
+				</button>
+			</form>
+		</div>
+
+		@components.ProfileLoadingIndicator("Creating", "Setting up your profile...")
+
+		<!-- Success State (shown when status is 'success') -->
+		<div
+			x-show="status === 'success'"
+			class="bg-card border rounded-lg p-8 shadow-sm text-center"
+		>
+			<div class="flex flex-col items-center space-y-4">
+				<!-- Success Icon -->
+				<div class="h-16 w-16 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center">
+					<svg class="h-8 w-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+					</svg>
+				</div>
+
+				<div>
+					<h2 class="text-xl font-serif font-bold mb-2">Profile Created!</h2>
+					<p class="text-muted-foreground">
+						Redirecting you to your personalized news feed...
+					</p>
+				</div>
+			</div>
+		</div>
+
+		<!-- Error State (shown when status is 'error') -->
+		<div
+			x-show="status === 'error'"
+			class="bg-card border border-destructive rounded-lg p-8 shadow-sm"
+		>
+			<div class="text-center space-y-4">
+				<!-- Error Icon -->
+				<div class="h-16 w-16 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center mx-auto">
+					<svg class="h-8 w-8 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+					</svg>
+				</div>
+
+				<div>
+					<h2 class="text-xl font-serif font-bold mb-2">Something Went Wrong</h2>
+					<p class="text-muted-foreground mb-4" x-text="errorMsg"></p>
+					<button
+						@click="retry()"
+						class="bg-primary text-primary-foreground px-6 py-2 rounded-md font-medium hover:bg-primary/90 transition-colors"
+					>
+						Try Again
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Timeout State (shown when status is 'timeout') -->
+		<div
+			x-show="status === 'timeout'"
+			class="bg-card border border-yellow-500 rounded-lg p-8 shadow-sm"
+		>
+			<div class="text-center space-y-4">
+				<!-- Warning Icon -->
+				<div class="h-16 w-16 bg-yellow-100 dark:bg-yellow-900 rounded-full flex items-center justify-center mx-auto">
+					<svg class="h-8 w-8 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+					</svg>
+				</div>
+
+				<div>
+					<h2 class="text-xl font-serif font-bold mb-2">Character Generation Timed Out</h2>
+					<p class="text-muted-foreground mb-4">
+						Don't worry! Your profile has been created with a default character. You can continue to use Meows.
+					</p>
+					<button
+						@click="complete()"
+						class="bg-primary text-primary-foreground px-6 py-2 rounded-md font-medium hover:bg-primary/90 transition-colors"
+					>
+						Continue to Meows
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Alpine.js Component Script -->
+	<script>
+		document.addEventListener('alpine:init', () => {
+			Alpine.data('profileSetup', () => ({
+				status: 'idle',  // idle | submitting | polling | success | error | timeout
+				profileId: null,
+				errorMsg: '',
+				pollCount: 0,
+				maxPolls: 30,  // 60 seconds max (30 polls * 2s interval)
+				pollStartTime: null,
+
+				// Computed property for actual elapsed seconds
+				get pollSeconds() {
+					return this.pollCount * 2;  // 2 second polling interval
+				},
+
+				handleResponse(event) {
+					const xhr = event.detail.xhr;
+
+					if (xhr.status === 201) {
+						// Profile created successfully
+						try {
+							const response = JSON.parse(xhr.response);
+							this.profileId = response.id;
+							this.status = 'polling';
+							this.pollStartTime = Date.now();
+							this.pollStatus();
+						} catch (e) {
+							this.status = 'error';
+							this.errorMsg = 'Failed to parse response. Please try again.';
+						}
+					} else {
+						// Error creating profile
+						this.status = 'error';
+						try {
+							const errorResponse = JSON.parse(xhr.response);
+							this.errorMsg = errorResponse.error || 'Failed to create profile. Please try again.';
+						} catch (e) {
+							this.errorMsg = 'Failed to create profile. Please try again.';
+						}
+					}
+				},
+
+				async pollStatus() {
+					if (this.pollCount++ > this.maxPolls) {
+						this.status = 'timeout';
+						return;
+					}
+
+					try {
+						const response = await fetch(`/api/profiles/${this.profileId}/status`);
+
+						if (!response.ok) {
+							throw new Error('Failed to fetch profile status');
+						}
+
+						const data = await response.json();
+
+						if (data.character_status === 'ready') {
+							this.status = 'success';
+							// Wait 1 second to show success message, then redirect
+							setTimeout(() => this.complete(), 1000);
+						} else if (data.character_status === 'error') {
+							this.status = 'error';
+							this.errorMsg = data.character_error || 'Character generation failed. Please try again.';
+						} else {
+							// Still pending or updating - continue polling
+							setTimeout(() => this.pollStatus(), 2000);
+						}
+					} catch (error) {
+						// Network error during polling - continue trying
+						console.error('Polling error:', error);
+						setTimeout(() => this.pollStatus(), 2000);
+					}
+				},
+
+				async complete() {
+					// Set cookie via server (secure HttpOnly cookie)
+					try {
+						const response = await fetch(`/api/profiles/switch/${this.profileId}`, {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/x-www-form-urlencoded',
+							},
+							body: new URLSearchParams({
+								csrf_token: document.querySelector('input[name="csrf_token"]').value
+							})
+						});
+
+						if (response.ok) {
+							// Redirect to home
+							window.location.href = '/';
+						} else {
+							this.status = 'error';
+							this.errorMsg = 'Failed to activate profile. Please try again.';
+						}
+					} catch (error) {
+						this.status = 'error';
+						this.errorMsg = 'Failed to activate profile. Please try again.';
+					}
+				},
+
+				retry() {
+					this.status = 'idle';
+					this.profileId = null;
+					this.errorMsg = '';
+					this.pollCount = 0;
+					this.pollStartTime = null;
+				}
+			}));
+		});
+	</script>
+}

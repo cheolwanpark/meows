@@ -17,6 +17,16 @@ templ Header() {
 				<a href="/sources" class="text-sm font-medium hover:text-brand transition-colors">
 					Sources
 				</a>
+				<!-- Profile Switcher (loaded via HTMX) -->
+				<div
+					hx-get="/profiles/switcher"
+					hx-trigger="load"
+					hx-swap="innerHTML"
+					class="flex items-center"
+				>
+					<!-- Loading placeholder -->
+					<div class="text-sm text-muted-foreground">...</div>
+				</div>
 				<button
 					x-data="{ dark: false }"
 					x-init="dark = document.documentElement.classList.contains('dark')"

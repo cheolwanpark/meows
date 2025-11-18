@@ -13,6 +13,7 @@ type Source struct {
 	Type          string          `json:"type"`        // "reddit" or "semantic_scholar"
 	Config        json.RawMessage `json:"config"`      // Per-source settings (subreddit, query, filters, etc.)
 	ExternalID    string          `json:"external_id"` // For dedup (e.g., subreddit name)
+	ProfileID     string          `json:"profile_id"`  // Profile that owns this source
 	LastRunAt     *time.Time      `json:"last_run_at,omitempty"`
 	LastSuccessAt *time.Time      `json:"last_success_at,omitempty"`
 	LastError     string          `json:"last_error,omitempty"`
@@ -26,6 +27,7 @@ type Article struct {
 	ID         string          `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	SourceID   string          `json:"source_id" example:"660e8400-e29b-41d4-a716-446655440001"`
 	ExternalID string          `json:"external_id" example:"abc123"` // Reddit post ID / S2 paper ID
+	ProfileID  string          `json:"profile_id" example:"770e8400-e29b-41d4-a716-446655440002"`
 	Title      string          `json:"title" example:"Understanding Go Concurrency"`
 	Author     string          `json:"author" example:"user123"`
 	Content    string          `json:"content" example:"This is the article content..."`
@@ -45,6 +47,29 @@ type Comment struct {
 	WrittenAt  time.Time `json:"written_at"`
 	ParentID   *string   `json:"parent_id,omitempty"` // NULL for top-level
 	Depth      int       `json:"depth"`               // Reddit comment depth
+}
+
+// Profile represents a user profile (Netflix-style)
+// @Description User profile with AI-generated character description
+type Profile struct {
+	ID              string     `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Nickname        string     `json:"nickname" example:"Tech Enthusiast"`
+	UserDescription string     `json:"user_description" example:"I love reading about Go and distributed systems"`
+	Character       *string    `json:"character,omitempty" example:"A curious developer who enjoys diving deep into systems programming"`
+	CharacterStatus string     `json:"character_status" example:"ready" enums:"pending,ready,updating,error"`
+	CharacterError  *string    `json:"character_error,omitempty"`
+	Milestone       string     `json:"milestone" example:"init" enums:"init,3,10,20,weekly"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty" example:"2024-11-15T12:00:00Z"`
+	CreatedAt       time.Time  `json:"created_at" example:"2024-11-15T12:00:00Z"`
+}
+
+// Like represents a profile's like on an article
+// @Description Article like by a profile
+type Like struct {
+	ID        string    `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	ProfileID string    `json:"profile_id" example:"660e8400-e29b-41d4-a716-446655440001"`
+	ArticleID string    `json:"article_id" example:"770e8400-e29b-41d4-a716-446655440002"`
+	CreatedAt time.Time `json:"created_at" example:"2024-11-15T12:00:00Z"`
 }
 
 // ScheduleEntry represents a scheduled job in the next 24 hours

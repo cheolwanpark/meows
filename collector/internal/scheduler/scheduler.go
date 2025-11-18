@@ -5,11 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
+	"github.com/cheolwanpark/meows/collector/internal/profile"
 	"github.com/cheolwanpark/meows/collector/internal/source"
 	"github.com/robfig/cron/v3"
 	"golang.org/x/time/rate"
@@ -21,15 +23,17 @@ type Scheduler struct {
 	db              *db.DB
 	config          *config.CollectorConfig   // Global configuration from file
 	rateLimiters    map[string]*rate.Limiter  // Long-lived rate limiters per source type
+	profileService  *profile.UpdateService    // Profile update service
 	mu              sync.RWMutex
 	isRunning       bool
 }
 
 // New creates a new Scheduler with configuration from file
-func New(cfg *config.CollectorConfig, database *db.DB) (*Scheduler, error) {
+func New(cfg *config.CollectorConfig, database *db.DB, profService *profile.UpdateService) (*Scheduler, error) {
 	s := &Scheduler{
-		db:     database,
-		config: cfg,
+		db:             database,
+		config:         cfg,
+		profileService: profService,
 	}
 
 	// Create long-lived rate limiters from config
@@ -55,14 +59,26 @@ func (s *Scheduler) createCron() error {
 	// Register the single global job with schedule from config
 	_, err := s.cron.AddFunc(s.config.Schedule.CronExpr, func() {
 		if err := s.runAllSources(); err != nil {
-			log.Printf("Global crawl job failed: %v", err)
+			slog.Error("Global crawl job failed", "error", err)
 		}
 	})
 	if err != nil {
 		return fmt.Errorf("failed to register global cron job: %w", err)
 	}
 
-	log.Printf("Registered global cron job with schedule: %s", s.config.Schedule.CronExpr)
+	slog.Info("Registered global cron job", "schedule", s.config.Schedule.CronExpr)
+
+	// Register profile update cron job if profile service is available
+	if s.profileService != nil && s.config.Profile.DailyCronExpr != "" {
+		_, err = s.cron.AddFunc(s.config.Profile.DailyCronExpr, func() {
+			s.CheckProfileUpdates()
+		})
+		if err != nil {
+			return fmt.Errorf("failed to register profile update cron job: %w", err)
+		}
+		slog.Info("Registered profile update cron job", "schedule", s.config.Profile.DailyCronExpr)
+	}
+
 	return nil
 }
 
@@ -105,11 +121,58 @@ func (s *Scheduler) RunNow() error {
 			s.mu.Unlock()
 		}()
 		if err := s.runAllSources(); err != nil {
-			log.Printf("Manual crawl job failed: %v", err)
+			slog.Error("Manual crawl job failed", "error", err)
 		}
 	}()
 
 	return nil
+}
+
+// CheckProfileUpdates checks for profiles that need weekly character updates
+// This runs on a schedule defined by PROFILE_DAILY_CRON config
+func (s *Scheduler) CheckProfileUpdates() {
+	if s.profileService == nil {
+		slog.Warn("Profile service not available, skipping profile updates")
+		return
+	}
+
+	ctx := context.Background()
+
+	// Query profiles needing weekly updates (milestone='weekly' and not updated in last 7 days)
+	rows, err := s.db.Query(`
+		SELECT id
+		FROM profiles
+		WHERE milestone = 'weekly'
+		  AND (updated_at IS NULL OR updated_at < datetime('now', '-7 days'))
+	`)
+	if err != nil {
+		slog.Error("Failed to query profiles for weekly update", "error", err)
+		return
+	}
+	defer rows.Close()
+
+	var profileIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			slog.Error("Failed to scan profile ID", "error", err)
+			continue
+		}
+		profileIDs = append(profileIDs, id)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.Error("Error iterating profile rows", "error", err)
+		return
+	}
+
+	slog.Info("Weekly profile update check", "profiles_to_update", len(profileIDs))
+
+	// Update each profile (UpdateCharacter handles concurrency internally with semaphore)
+	for _, profileID := range profileIDs {
+		slog.Info("Triggering weekly character update", "profile_id", profileID)
+		s.profileService.UpdateCharacter(ctx, profileID)
+	}
 }
 
 // runAllSources orchestrates crawling all sources

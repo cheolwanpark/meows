@@ -22,6 +22,8 @@ type Article struct {
 	Score     int
 	Comments  int
 	Source    string // "reddit" or "semantic_scholar"
+	Liked     bool   // Whether current profile has liked this article
+	LikeID    string // ID of the like (for unlike button)
 }
 
 // FromCollectorArticle converts a collector.Article to a view model Article
@@ -52,6 +54,10 @@ func FromCollectorArticle(a collector.Article, sourceType string) Article {
 	if article.Author == "" {
 		article.Author = "unknown"
 	}
+
+	// Include like status if available
+	article.Liked = a.Liked
+	article.LikeID = a.LikeID
 
 	return article
 }

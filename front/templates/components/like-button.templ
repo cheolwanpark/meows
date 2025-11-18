@@ -1,0 +1,45 @@
+package components
+
+templ LikeButton(articleID string, liked bool, likeID string, profileID string, csrfToken string) {
+	if profileID == "" {
+		<!-- No profile - don't show like button -->
+	} else if liked {
+		<!-- Unlike button (filled heart) -->
+		<form
+			hx-delete={ "/api/likes/" + likeID }
+			hx-swap="outerHTML"
+			hx-target="this"
+			class="inline-block"
+		>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="article_id" value={ articleID }/>
+			<button
+				type="submit"
+				class="flex items-center gap-1 text-xs text-red-500 hover:text-red-600 transition-colors"
+				title="Unlike"
+			>
+				<span class="text-sm">❤️</span>
+				<span>Liked</span>
+			</button>
+		</form>
+	} else {
+		<!-- Like button (outline heart) -->
+		<form
+			hx-post={ "/api/articles/" + articleID + "/like" }
+			hx-swap="outerHTML"
+			hx-target="this"
+			class="inline-block"
+		>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="profile_id" value={ profileID }/>
+			<button
+				type="submit"
+				class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+				title="Like"
+			>
+				<span class="text-sm">🤍</span>
+				<span>Like</span>
+			</button>
+		</form>
+	}
+}

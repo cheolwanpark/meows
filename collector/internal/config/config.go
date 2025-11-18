@@ -21,6 +21,8 @@ type CollectorConfig struct {
 	Schedule    ScheduleConfig
 	RateLimits  RateLimitsConfig
 	Credentials CredentialsConfig
+	Gemini      GeminiConfig
+	Profile     ProfileConfig
 }
 
 // ServerConfig represents collector server settings
@@ -52,6 +54,19 @@ type CredentialsConfig struct {
 	SemanticScholarAPIKey string
 }
 
+// GeminiConfig represents Gemini API configuration
+type GeminiConfig struct {
+	APIKey string
+}
+
+// ProfileConfig represents profile-related configuration
+type ProfileConfig struct {
+	DailyCronExpr        string
+	MilestoneThreshold1  int // First milestone threshold (default: 3 likes)
+	MilestoneThreshold2  int // Second milestone threshold (default: 10 likes)
+	MilestoneThreshold3  int // Third milestone threshold (default: 20 likes)
+}
+
 // LoadConfig loads and validates the configuration from environment variables
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
@@ -76,6 +91,15 @@ func LoadConfig() (*Config, error) {
 				RedditUsername:        getEnv("COLLECTOR_REDDIT_USERNAME", ""),
 				RedditPassword:        getEnv("COLLECTOR_REDDIT_PASSWORD", ""),
 				SemanticScholarAPIKey: getEnv("COLLECTOR_SEMANTIC_SCHOLAR_API_KEY", ""),
+			},
+			Gemini: GeminiConfig{
+				APIKey: getEnv("GEMINI_API_KEY", ""),
+			},
+			Profile: ProfileConfig{
+				DailyCronExpr:       getEnv("PROFILE_DAILY_CRON", "0 1 * * *"),
+				MilestoneThreshold1: getEnvAsInt("PROFILE_MILESTONE_1", 3),
+				MilestoneThreshold2: getEnvAsInt("PROFILE_MILESTONE_2", 10),
+				MilestoneThreshold3: getEnvAsInt("PROFILE_MILESTONE_3", 20),
 			},
 		},
 	}

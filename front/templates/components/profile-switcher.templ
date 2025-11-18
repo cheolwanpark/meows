@@ -1,0 +1,97 @@
+package components
+
+import (
+	"github.com/cheolwanpark/meows/front/internal/collector"
+)
+
+templ ProfileSwitcher(profiles []collector.Profile, currentProfileID string, csrfToken string) {
+	if len(profiles) == 0 {
+		<!-- No profiles - show link to setup -->
+		<a href="/profiles/setup" class="text-sm font-medium hover:text-brand transition-colors">
+			Setup Profile
+		</a>
+	} else {
+		<!-- Profile dropdown -->
+		<div x-data="{ open: false }" class="relative">
+			<button
+				@click="open = !open"
+				class="flex items-center gap-1 text-sm font-medium hover:text-brand transition-colors"
+			>
+				<span>
+					if currentProfileID != "" {
+						for _, p := range profiles {
+							if p.ID == currentProfileID {
+								{ p.Nickname }
+							}
+						}
+					} else {
+						Select Profile
+					}
+				</span>
+				<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+					<path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+				</svg>
+			</button>
+			<!-- Dropdown Menu -->
+			<div
+				x-show="open"
+				@click.away="open = false"
+				x-transition:enter="transition ease-out duration-100"
+				x-transition:enter-start="transform opacity-0 scale-95"
+				x-transition:enter-end="transform opacity-100 scale-100"
+				x-transition:leave="transition ease-in duration-75"
+				x-transition:leave-start="transform opacity-100 scale-100"
+				x-transition:leave-end="transform opacity-0 scale-95"
+				class="absolute right-0 mt-2 w-56 origin-top-right rounded-md bg-background border shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-50"
+				style="display: none;"
+			>
+				<div class="py-1">
+					for _, profile := range profiles {
+						<form
+							hx-post={ "/api/profiles/switch/" + profile.ID }
+							hx-swap="none"
+							@htmx:after-request="window.location.reload()"
+							class="block"
+						>
+							<input type="hidden" name="csrf_token" value={ csrfToken }/>
+							<button
+								type="submit"
+								class={
+									"w-full text-left px-4 py-2 text-sm hover:bg-muted transition-colors",
+									templ.KV("bg-muted font-medium", profile.ID == currentProfileID),
+								}
+							>
+								<div class="flex items-center justify-between">
+									<span>{ profile.Nickname }</span>
+									if profile.ID == currentProfileID {
+										<span class="text-xs text-muted-foreground">✓</span>
+									}
+								</div>
+								if profile.CharacterStatus == "ready" && profile.Character != "" {
+									<div class="text-xs text-muted-foreground mt-1 truncate">
+										{ profile.Character }
+									</div>
+								}
+							</button>
+						</form>
+					}
+					<hr class="my-1 border-border"/>
+					if currentProfileID != "" {
+						<a
+							href="/profile"
+							class="block px-4 py-2 text-sm hover:bg-muted transition-colors"
+						>
+							✏️ Edit Profile
+						</a>
+					}
+					<a
+						href="/profiles/setup"
+						class="block px-4 py-2 text-sm hover:bg-muted transition-colors"
+					>
+						<span class="text-primary">+ New Profile</span>
+					</a>
+				</div>
+			</div>
+		</div>
+	}
+}

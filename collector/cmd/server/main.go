@@ -14,6 +14,8 @@ import (
 	"github.com/cheolwanpark/meows/collector/internal/api"
 	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
+	"github.com/cheolwanpark/meows/collector/internal/gemini"
+	"github.com/cheolwanpark/meows/collector/internal/profile"
 	"github.com/cheolwanpark/meows/collector/internal/scheduler"
 )
 
@@ -59,8 +61,32 @@ func main() {
 	defer database.Close()
 	log.Println("Database initialized")
 
+	// Initialize Gemini client
+	ctx := context.Background()
+	geminiAPIKey := cfg.Collector.Gemini.APIKey
+	if geminiAPIKey == "" {
+		log.Println("Warning: GEMINI_API_KEY not set, profile character generation will fail")
+	}
+
+	geminiClient, err := gemini.NewClient(ctx, geminiAPIKey)
+	if err != nil {
+		log.Fatalf("Failed to initialize Gemini client: %v", err)
+	}
+	defer geminiClient.Close()
+	log.Println("Gemini client initialized")
+
+	// Initialize profile service with milestone thresholds from config
+	profileService := profile.NewUpdateService(
+		database,
+		geminiClient,
+		cfg.Collector.Profile.MilestoneThreshold1,
+		cfg.Collector.Profile.MilestoneThreshold2,
+		cfg.Collector.Profile.MilestoneThreshold3,
+	)
+	log.Println("Profile service initialized")
+
 	// Initialize scheduler with global configuration from environment variables
-	sched, err := scheduler.New(&cfg.Collector, database)
+	sched, err := scheduler.New(&cfg.Collector, database, profileService)
 	if err != nil {
 		log.Fatalf("Failed to initialize scheduler: %v", err)
 	}
@@ -70,7 +96,7 @@ func main() {
 	log.Println("Scheduler started")
 
 	// Setup HTTP router
-	router := api.SetupRouter(database, sched)
+	router := api.SetupRouter(database, sched, profileService)
 
 	// Create HTTP server
 	server := &http.Server{

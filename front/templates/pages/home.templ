@@ -7,11 +7,11 @@ import (
 	"github.com/cheolwanpark/meows/front/internal/models"
 )
 
-templ HomePage(articles []models.Article, csrfToken string) {
-	@layouts.Base("Home", csrfToken, homePageContent(articles))
+templ HomePage(articles []models.Article, csrfToken, profileID string) {
+	@layouts.Base("Home", csrfToken, homePageContent(articles, csrfToken, profileID))
 }
 
-templ homePageContent(articles []models.Article) {
+templ homePageContent(articles []models.Article, csrfToken, profileID string) {
 	<div class="space-y-6">
 		<div class="flex items-center justify-between">
 			<h1 class="text-3xl font-serif font-bold">Latest News</h1>
@@ -28,7 +28,7 @@ templ homePageContent(articles []models.Article) {
 		} else {
 			<div class="space-y-1 border rounded-lg overflow-hidden bg-card">
 				for i, article := range articles {
-					@components.NewsItem(article, i+1)
+					@components.NewsItem(article, i+1, csrfToken, profileID)
 				}
 			</div>
 		}

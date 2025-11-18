@@ -47,7 +47,7 @@ func (c *CSRF) SetToken(w http.ResponseWriter, r *http.Request, token string) {
 		MaxAge:   24 * 3600, // 24 hours
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   r.TLS != nil, // Only set Secure if using HTTPS
+		Secure:   IsSecureRequest(r), // Set Secure flag for HTTPS connections
 	})
 }
 

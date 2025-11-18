@@ -38,6 +38,9 @@ func main() {
 	// Initialize CSRF middleware
 	csrfMiddleware := middleware.NewCSRF()
 
+	// Initialize profile middleware
+	profileMiddleware := middleware.NewProfileMiddleware(collectorClient)
+
 	// Initialize handlers
 	h := handlers.NewHandler(collectorClient, csrfMiddleware)
 
@@ -50,6 +53,7 @@ func main() {
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.Timeout(30 * time.Second))
+	r.Use(profileMiddleware.Middleware) // Profile context middleware
 
 	// Static file server with cache headers
 	fileServer := http.FileServer(http.Dir("static"))
@@ -61,11 +65,23 @@ func main() {
 	r.Get("/articles/{id}", h.ArticleDetail)
 	r.Get("/sources", h.SourcesPage)
 
+	// Profile routes
+	r.Get("/profiles/setup", h.ProfileSetup)
+	r.Get("/profiles/switcher", h.ProfileSwitcherPartial)
+	r.Get("/profile", h.ProfileEditPage)
+
 	// API endpoints (all under /api prefix with CSRF protection)
 	r.Route("/api", func(r chi.Router) {
 		r.Use(csrfMiddleware.Validate)
 		r.Post("/sources", h.CreateSource)
 		r.Delete("/sources/{id}", h.DeleteSource)
+		r.Post("/profiles", h.CreateProfile)
+		r.Get("/profiles/{id}/status", h.GetProfileStatus)
+		r.Post("/profiles/switch/{id}", h.SwitchProfile)
+		r.Patch("/profile", h.UpdateProfileHandler)
+		r.Get("/profile/status", h.GetProfileStatusAPI)
+		r.Post("/articles/{id}/like", h.LikeArticle)
+		r.Delete("/likes/{id}", h.UnlikeArticle)
 	})
 
 	// HTTP server

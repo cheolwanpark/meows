@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cheolwanpark/meows/collector/internal/db"
+	"github.com/cheolwanpark/meows/collector/internal/profile"
 	"github.com/cheolwanpark/meows/collector/internal/scheduler"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -17,15 +18,17 @@ import (
 
 // Handler holds dependencies for HTTP handlers
 type Handler struct {
-	db        *db.DB
-	scheduler *scheduler.Scheduler
+	db             *db.DB
+	scheduler      *scheduler.Scheduler
+	profileService *profile.UpdateService
 }
 
 // NewHandler creates a new Handler
-func NewHandler(database *db.DB, sched *scheduler.Scheduler) *Handler {
+func NewHandler(database *db.DB, sched *scheduler.Scheduler, profService *profile.UpdateService) *Handler {
 	return &Handler{
-		db:        database,
-		scheduler: sched,
+		db:             database,
+		scheduler:      sched,
+		profileService: profService,
 	}
 }
 
@@ -55,6 +58,12 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate profile_id
+	if req.ProfileID == "" {
+		respondError(w, http.StatusBadRequest, "profile_id is required")
+		return
+	}
+
 	// Extract external ID for deduplication
 	externalID, err := extractExternalID(req.Type, req.Config)
 	if err != nil {
@@ -68,15 +77,16 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		Type:       req.Type,
 		Config:     req.Config,
 		ExternalID: externalID,
+		ProfileID:  req.ProfileID,
 		Status:     "idle",
 		CreatedAt:  time.Now(),
 	}
 
 	// Insert into database
 	_, err = h.db.Exec(`
-		INSERT INTO sources (id, type, config, external_id, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, source.ID, source.Type, source.Config, source.ExternalID, source.Status, source.CreatedAt)
+		INSERT INTO sources (id, type, config, external_id, profile_id, status, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, source.ID, source.Type, source.Config, source.ExternalID, source.ProfileID, source.Status, source.CreatedAt)
 
 	if err != nil {
 		// Check for unique constraint violation
@@ -444,6 +454,7 @@ func (h *Handler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 // @Router /articles [get]
 func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.URL.Query().Get("source_id")
+	profileID := r.URL.Query().Get("profile_id")
 	limitStr := r.URL.Query().Get("limit")
 	offsetStr := r.URL.Query().Get("offset")
 	sinceStr := r.URL.Query().Get("since")
@@ -473,25 +484,54 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build query
-	query := `
-		SELECT id, source_id, external_id, title, author, content, url, written_at, metadata, created_at
-		FROM articles
-		WHERE 1=1
-	`
+	// Build query - include like information if profile_id provided
+	var query string
 	args := []interface{}{}
 
+	if profileID != "" {
+		// Include like status and scope to profile
+		query = `
+			SELECT a.id, a.source_id, a.external_id, a.profile_id, a.title, a.author,
+			       a.content, a.url, a.written_at, a.metadata, a.created_at,
+			       CASE WHEN l.id IS NOT NULL THEN 1 ELSE 0 END as liked,
+			       COALESCE(l.id, '') as like_id
+			FROM articles a
+			LEFT JOIN likes l ON a.id = l.article_id AND l.profile_id = ?
+			WHERE a.profile_id = ?
+		`
+		args = append(args, profileID, profileID)
+	} else {
+		// No like status, no profile filter
+		query = `
+			SELECT id, source_id, external_id, profile_id, title, author, content, url, written_at, metadata, created_at
+			FROM articles
+			WHERE 1=1
+		`
+	}
+
 	if sourceID != "" {
-		query += " AND source_id = ?"
+		if profileID != "" {
+			query += " AND a.source_id = ?"
+		} else {
+			query += " AND source_id = ?"
+		}
 		args = append(args, sourceID)
 	}
 
 	if since != nil {
-		query += " AND written_at >= ?"
+		if profileID != "" {
+			query += " AND a.written_at >= ?"
+		} else {
+			query += " AND written_at >= ?"
+		}
 		args = append(args, *since)
 	}
 
-	query += " ORDER BY written_at DESC LIMIT ? OFFSET ?"
+	if profileID != "" {
+		query += " ORDER BY a.written_at DESC LIMIT ? OFFSET ?"
+	} else {
+		query += " ORDER BY written_at DESC LIMIT ? OFFSET ?"
+	}
 	args = append(args, limit, offset)
 
 	rows, err := h.db.Query(query, args...)
@@ -501,44 +541,93 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	articles := []db.Article{}
-	for rows.Next() {
-		var article db.Article
-		var url, metadata sql.NullString
+	if profileID != "" {
+		// Return articles with like status
+		articlesWithLikes := []ArticleWithLikeStatus{}
+		for rows.Next() {
+			var article ArticleWithLikeStatus
+			var url, metadata sql.NullString
+			var liked int
 
-		err := rows.Scan(
-			&article.ID,
-			&article.SourceID,
-			&article.ExternalID,
-			&article.Title,
-			&article.Author,
-			&article.Content,
-			&url,
-			&article.WrittenAt,
-			&metadata,
-			&article.CreatedAt,
-		)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to scan article: %v", err))
+			err := rows.Scan(
+				&article.ID,
+				&article.SourceID,
+				&article.ExternalID,
+				&article.ProfileID,
+				&article.Title,
+				&article.Author,
+				&article.Content,
+				&url,
+				&article.WrittenAt,
+				&metadata,
+				&article.CreatedAt,
+				&liked,
+				&article.LikeID,
+			)
+			if err != nil {
+				respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to scan article: %v", err))
+				return
+			}
+
+			if url.Valid {
+				article.URL = url.String
+			}
+			if metadata.Valid {
+				article.Metadata = json.RawMessage(metadata.String)
+			}
+			article.Liked = (liked == 1)
+
+			articlesWithLikes = append(articlesWithLikes, article)
+		}
+
+		if err := rows.Err(); err != nil {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("error iterating articles: %v", err))
 			return
 		}
 
-		if url.Valid {
-			article.URL = url.String
+		json.NewEncoder(w).Encode(articlesWithLikes)
+	} else {
+		// Return regular articles without like status
+		articles := []db.Article{}
+		for rows.Next() {
+			var article db.Article
+			var url, metadata sql.NullString
+
+			err := rows.Scan(
+				&article.ID,
+				&article.SourceID,
+				&article.ExternalID,
+				&article.ProfileID,
+				&article.Title,
+				&article.Author,
+				&article.Content,
+				&url,
+				&article.WrittenAt,
+				&metadata,
+				&article.CreatedAt,
+			)
+			if err != nil {
+				respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to scan article: %v", err))
+				return
+			}
+
+			if url.Valid {
+				article.URL = url.String
+			}
+			if metadata.Valid {
+				article.Metadata = json.RawMessage(metadata.String)
+			}
+
+			articles = append(articles, article)
 		}
-		if metadata.Valid {
-			article.Metadata = json.RawMessage(metadata.String)
+
+		if err := rows.Err(); err != nil {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("error iterating articles: %v", err))
+			return
 		}
 
-		articles = append(articles, article)
+		json.NewEncoder(w).Encode(articles)
 	}
-
-	if err := rows.Err(); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("error iterating articles: %v", err))
-		return
-	}
-
-	json.NewEncoder(w).Encode(articles)
 }
 
 // ArticleDetailResponse represents an article with its comments
@@ -789,6 +878,453 @@ func (h *Handler) Metrics(w http.ResponseWriter, r *http.Request) {
 // Note: Global config endpoints (GET/PATCH /config) removed
 // Configuration is now file-based (.config.yaml) and requires service restart to apply changes
 
+// CreateProfile godoc
+// @Summary Create a new profile
+// @Description Create a new profile with AI-generated character (async)
+// @Tags profiles
+// @Accept json
+// @Produce json
+// @Param profile body CreateProfileRequest true "Profile data"
+// @Success 201 {object} db.Profile
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /profiles [post]
+func (h *Handler) CreateProfile(w http.ResponseWriter, r *http.Request) {
+	var req CreateProfileRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Nickname == "" {
+		respondError(w, http.StatusBadRequest, "nickname is required")
+		return
+	}
+
+	// Create profile
+	profile := &db.Profile{
+		ID:              uuid.New().String(),
+		Nickname:        req.Nickname,
+		UserDescription: req.UserDescription,
+		CharacterStatus: "pending",
+		Milestone:       "init",
+		CreatedAt:       time.Now(),
+	}
+
+	// Insert into database
+	_, err := h.db.Exec(`
+		INSERT INTO profiles (id, nickname, user_description, character_status, milestone, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, profile.ID, profile.Nickname, profile.UserDescription, profile.CharacterStatus, profile.Milestone, profile.CreatedAt)
+
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create profile: %v", err))
+		return
+	}
+
+	// Trigger character generation asynchronously
+	h.profileService.UpdateCharacter(r.Context(), profile.ID)
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(profile)
+}
+
+// ListProfiles godoc
+// @Summary List all profiles
+// @Description Get all profiles
+// @Tags profiles
+// @Accept json
+// @Produce json
+// @Success 200 {array} db.Profile
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /profiles [get]
+func (h *Handler) ListProfiles(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.db.Query(`
+		SELECT id, nickname, user_description, character, character_status,
+		       character_error, milestone, updated_at, created_at
+		FROM profiles
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query profiles: %v", err))
+		return
+	}
+	defer rows.Close()
+
+	var profiles []db.Profile
+	for rows.Next() {
+		var profile db.Profile
+		err := rows.Scan(
+			&profile.ID, &profile.Nickname, &profile.UserDescription, &profile.Character,
+			&profile.CharacterStatus, &profile.CharacterError, &profile.Milestone,
+			&profile.UpdatedAt, &profile.CreatedAt,
+		)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to scan profile: %v", err))
+			return
+		}
+		profiles = append(profiles, profile)
+	}
+
+	if profiles == nil {
+		profiles = []db.Profile{}
+	}
+
+	json.NewEncoder(w).Encode(profiles)
+}
+
+// GetProfile godoc
+// @Summary Get a profile by ID
+// @Description Get a specific profile
+// @Tags profiles
+// @Accept json
+// @Produce json
+// @Param id path string true "Profile ID"
+// @Success 200 {object} db.Profile
+// @Failure 404 {object} ErrorResponse "Profile not found"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /profiles/{id} [get]
+func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var profile db.Profile
+	err := h.db.QueryRow(`
+		SELECT id, nickname, user_description, character, character_status,
+		       character_error, milestone, updated_at, created_at
+		FROM profiles WHERE id = ?
+	`, id).Scan(
+		&profile.ID, &profile.Nickname, &profile.UserDescription, &profile.Character,
+		&profile.CharacterStatus, &profile.CharacterError, &profile.Milestone,
+		&profile.UpdatedAt, &profile.CreatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		respondError(w, http.StatusNotFound, "profile not found")
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query profile: %v", err))
+		return
+	}
+
+	json.NewEncoder(w).Encode(profile)
+}
+
+// ProfileStatusResponse represents the status of character generation
+type ProfileStatusResponse struct {
+	CharacterStatus string  `json:"character_status"`
+	CharacterError  *string `json:"character_error,omitempty"`
+}
+
+// GetProfileStatus godoc
+// @Summary Get profile character generation status
+// @Description Get only the character generation status for efficient polling
+// @Tags profiles
+// @Produce json
+// @Param id path string true "Profile ID"
+// @Success 200 {object} ProfileStatusResponse
+// @Failure 404 {object} ErrorResponse "Profile not found"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /profiles/{id}/status [get]
+func (h *Handler) GetProfileStatus(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var status ProfileStatusResponse
+	err := h.db.QueryRow(`
+		SELECT character_status, character_error
+		FROM profiles WHERE id = ?
+	`, id).Scan(&status.CharacterStatus, &status.CharacterError)
+
+	if err == sql.ErrNoRows {
+		respondError(w, http.StatusNotFound, "profile not found")
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query profile status: %v", err))
+		return
+	}
+
+	json.NewEncoder(w).Encode(status)
+}
+
+// UpdateProfile godoc
+// @Summary Update a profile
+// @Description Update profile nickname and/or user description
+// @Tags profiles
+// @Accept json
+// @Produce json
+// @Param id path string true "Profile ID"
+// @Param profile body UpdateProfileRequest true "Profile updates"
+// @Success 200 {object} db.Profile
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 404 {object} ErrorResponse "Profile not found"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /profiles/{id} [patch]
+func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var req UpdateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Check if profile exists and get current description
+	var currentDesc string
+	err := h.db.QueryRow("SELECT user_description FROM profiles WHERE id = ?", id).Scan(&currentDesc)
+	if err == sql.ErrNoRows {
+		respondError(w, http.StatusNotFound, "profile not found")
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query profile: %v", err))
+		return
+	}
+
+	// Build update query
+	updates := []string{}
+	args := []interface{}{}
+	descriptionChanged := false
+
+	if req.Nickname != nil {
+		updates = append(updates, "nickname = ?")
+		args = append(args, *req.Nickname)
+	}
+
+	if req.UserDescription != nil {
+		if *req.UserDescription != currentDesc {
+			descriptionChanged = true
+		}
+		updates = append(updates, "user_description = ?")
+		args = append(args, *req.UserDescription)
+	}
+
+	if len(updates) == 0 {
+		respondError(w, http.StatusBadRequest, "no updates provided")
+		return
+	}
+
+	// Execute update
+	args = append(args, id)
+	query := fmt.Sprintf("UPDATE profiles SET %s WHERE id = ?", strings.Join(updates, ", "))
+	_, err = h.db.Exec(query, args...)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update profile: %v", err))
+		return
+	}
+
+	// Trigger character regeneration if description changed
+	if descriptionChanged {
+		h.profileService.UpdateCharacter(r.Context(), id)
+	}
+
+	// Fetch updated profile
+	var profile db.Profile
+	err = h.db.QueryRow(`
+		SELECT id, nickname, user_description, character, character_status,
+		       character_error, milestone, updated_at, created_at
+		FROM profiles WHERE id = ?
+	`, id).Scan(
+		&profile.ID, &profile.Nickname, &profile.UserDescription, &profile.Character,
+		&profile.CharacterStatus, &profile.CharacterError, &profile.Milestone,
+		&profile.UpdatedAt, &profile.CreatedAt,
+	)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query updated profile: %v", err))
+		return
+	}
+
+	json.NewEncoder(w).Encode(profile)
+}
+
+// DeleteProfile godoc
+// @Summary Delete a profile
+// @Description Delete a profile and all associated data
+// @Tags profiles
+// @Accept json
+// @Produce json
+// @Param id path string true "Profile ID"
+// @Success 204 "No content"
+// @Failure 404 {object} ErrorResponse "Profile not found"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /profiles/{id} [delete]
+func (h *Handler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	result, err := h.db.Exec("DELETE FROM profiles WHERE id = ?", id)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to delete profile: %v", err))
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		respondError(w, http.StatusNotFound, "profile not found")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// LikeArticle godoc
+// @Summary Like an article
+// @Description Create a like for an article, triggers character update if milestone reached
+// @Tags likes
+// @Accept json
+// @Produce json
+// @Param id path string true "Article ID"
+// @Param like body CreateLikeRequest true "Like data"
+// @Success 201 {object} db.Like
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 404 {object} ErrorResponse "Article not found"
+// @Failure 409 {object} ErrorResponse "Already liked"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /articles/{id}/like [post]
+func (h *Handler) LikeArticle(w http.ResponseWriter, r *http.Request) {
+	articleID := chi.URLParam(r, "id")
+
+	var req CreateLikeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.ProfileID == "" {
+		respondError(w, http.StatusBadRequest, "profile_id is required")
+		return
+	}
+
+	// Check if article exists (before transaction to avoid holding locks)
+	var exists bool
+	err := h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM articles WHERE id = ?)", articleID).Scan(&exists)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to check article: %v", err))
+		return
+	}
+	if !exists {
+		respondError(w, http.StatusNotFound, "article not found")
+		return
+	}
+
+	// Create like
+	like := &db.Like{
+		ID:        uuid.New().String(),
+		ProfileID: req.ProfileID,
+		ArticleID: articleID,
+		CreatedAt: time.Now(),
+	}
+
+	// Begin transaction to prevent race conditions on milestone updates
+	tx, err := h.db.Begin()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to begin transaction: %v", err))
+		return
+	}
+
+	// Use a flag to track if transaction was committed
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback()
+		}
+	}()
+
+	// Insert like within transaction
+	_, err = tx.Exec(`
+		INSERT INTO likes (id, profile_id, article_id, created_at)
+		VALUES (?, ?, ?, ?)
+	`, like.ID, like.ProfileID, like.ArticleID, like.CreatedAt)
+
+	if err != nil {
+		if isLikeUniqueViolation(err) {
+			respondError(w, http.StatusConflict, "article already liked")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create like: %v", err))
+		return
+	}
+
+	// Check milestone within same transaction
+	// Use SELECT FOR UPDATE to lock the profile row and prevent concurrent milestone updates
+	var likeCount int
+	var currentMilestone string
+
+	// Lock the profile row to prevent race conditions on milestone updates
+	// This ensures only one like request can check/update milestones at a time per profile
+	err = tx.QueryRow(`
+		SELECT milestone FROM profiles WHERE id = ?
+		-- Note: SQLite doesn't support FOR UPDATE, but serializable isolation handles this
+	`, req.ProfileID).Scan(&currentMilestone)
+
+	var shouldUpdate bool
+	var newMilestone string
+
+	if err == nil {
+		// Count likes AFTER inserting to get the new count including this like
+		// This happens within the transaction, so it's consistent
+		err = tx.QueryRow(`
+			SELECT COUNT(*) FROM likes WHERE profile_id = ?
+		`, req.ProfileID).Scan(&likeCount)
+
+		if err == nil {
+			shouldUpdate, newMilestone = h.profileService.CheckMilestone(currentMilestone, likeCount)
+			if shouldUpdate {
+				// Update milestone within transaction
+				_, err = tx.Exec("UPDATE profiles SET milestone = ? WHERE id = ?", newMilestone, req.ProfileID)
+				if err != nil {
+					respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update milestone: %v", err))
+					return
+				}
+			}
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to commit transaction: %v", err))
+		return
+	}
+	committed = true
+
+	// Trigger character update AFTER transaction commits (no network I/O during transaction)
+	if shouldUpdate {
+		h.profileService.UpdateCharacter(r.Context(), req.ProfileID)
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(like)
+}
+
+// UnlikeArticle godoc
+// @Summary Unlike an article
+// @Description Delete a like
+// @Tags likes
+// @Accept json
+// @Produce json
+// @Param id path string true "Like ID"
+// @Success 204 "No content"
+// @Failure 404 {object} ErrorResponse "Like not found"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Router /likes/{id} [delete]
+func (h *Handler) UnlikeArticle(w http.ResponseWriter, r *http.Request) {
+	likeID := chi.URLParam(r, "id")
+
+	result, err := h.db.Exec("DELETE FROM likes WHERE id = ?", likeID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to delete like: %v", err))
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		respondError(w, http.StatusNotFound, "like not found")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // Helper functions
 
 func respondError(w http.ResponseWriter, code int, message string) {
@@ -827,5 +1363,11 @@ func extractExternalID(sourceType string, config json.RawMessage) (string, error
 func isUniqueViolation(err error) bool {
 	// SQLite unique constraint error contains "UNIQUE constraint failed"
 	return err != nil && (err.Error() == "UNIQUE constraint failed: sources.type, sources.external_id" ||
-		err.Error() == "constraint failed: UNIQUE constraint failed: sources.type, sources.external_id")
+		err.Error() == "constraint failed: UNIQUE constraint failed: sources.type, sources.external_id, sources.profile_id" ||
+		strings.Contains(err.Error(), "UNIQUE constraint failed: sources"))
+}
+
+func isLikeUniqueViolation(err error) bool {
+	// SQLite unique constraint error for likes
+	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: likes.profile_id, likes.article_id")
 }

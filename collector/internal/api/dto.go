@@ -34,8 +34,9 @@ type ErrorResponse struct {
 // Schedule is now global (configured separately)
 // @Description Request body for creating a new crawling source
 type CreateSourceRequest struct {
-	Type   string          `json:"type" example:"reddit" enums:"reddit,semantic_scholar"`
-	Config json.RawMessage `json:"config"`
+	Type      string          `json:"type" example:"reddit" enums:"reddit,semantic_scholar"`
+	Config    json.RawMessage `json:"config"`
+	ProfileID string          `json:"profile_id" example:"550e8400-e29b-41d4-a716-446655440000"`
 }
 
 // UpdateSourceRequest represents the request body for updating a source
@@ -90,4 +91,32 @@ func extractConfigSummary(sourceType string, config json.RawMessage) string {
 	default:
 		return "unknown type"
 	}
+}
+
+// CreateProfileRequest represents the request body for creating a new profile
+// @Description Request body for creating a new profile
+type CreateProfileRequest struct {
+	Nickname        string `json:"nickname" example:"Tech Enthusiast"`
+	UserDescription string `json:"user_description" example:"I love reading about Go and distributed systems"`
+}
+
+// UpdateProfileRequest represents the request body for updating a profile
+// @Description Request body for updating a profile
+type UpdateProfileRequest struct {
+	Nickname        *string `json:"nickname,omitempty" example:"Tech Enthusiast"`
+	UserDescription *string `json:"user_description,omitempty" example:"I love reading about Go and distributed systems"`
+}
+
+// CreateLikeRequest represents the request body for liking an article
+// @Description Request body for liking an article
+type CreateLikeRequest struct {
+	ProfileID string `json:"profile_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+}
+
+// ArticleWithLikeStatus extends db.Article with like status information
+// @Description Article with like status for a specific profile
+type ArticleWithLikeStatus struct {
+	db.Article
+	Liked  bool   `json:"liked" example:"true"`
+	LikeID string `json:"like_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 }

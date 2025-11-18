@@ -67,8 +67,14 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 	csrfToken := h.csrf.GetToken(r)
 	h.csrf.SetToken(w, r, csrfToken)
 
-	// Fetch articles from collector
-	collectorArticles, err := h.collector.GetArticles(ctx, DefaultArticleLimit, DefaultArticleOffset)
+	// Get profile ID from middleware context (if available)
+	var profileID string
+	if cookie, err := r.Cookie("current_profile_id"); err == nil {
+		profileID = cookie.Value
+	}
+
+	// Fetch articles from collector (with profile context for like status)
+	collectorArticles, err := h.collector.GetArticles(ctx, DefaultArticleLimit, DefaultArticleOffset, profileID)
 	if err != nil {
 		slog.Error("Failed to fetch articles", "error", err)
 		// Render error page with proper HTTP status
@@ -107,7 +113,7 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Render page
-	component := pages.HomePage(articles, csrfToken)
+	component := pages.HomePage(articles, csrfToken, profileID)
 	component.Render(r.Context(), w)
 }
 
@@ -362,4 +368,316 @@ func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 	csrfToken := h.csrf.GetToken(r)
 	component := components.SourceList(viewSources, csrfToken)
 	component.Render(r.Context(), w)
+}
+
+// ProfileSetup renders the profile setup page
+func (h *Handler) ProfileSetup(w http.ResponseWriter, r *http.Request) {
+	// Get CSRF token
+	csrfToken := h.csrf.GetToken(r)
+	h.csrf.SetToken(w, r, csrfToken)
+
+	// Render profile setup page
+	component := pages.ProfileSetup(csrfToken)
+	component.Render(r.Context(), w)
+}
+
+// SwitchProfile handles profile switching by setting cookie and redirecting
+func (h *Handler) SwitchProfile(w http.ResponseWriter, r *http.Request) {
+	profileID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	// Validate profile exists
+	_, err := h.collector.GetProfile(ctx, profileID)
+	if err != nil {
+		slog.Error("Failed to validate profile", "profile_id", profileID, "error", err)
+		http.Error(w, "Invalid profile", http.StatusBadRequest)
+		return
+	}
+
+	// Set cookie with security flags
+	http.SetCookie(w, &http.Cookie{
+		Name:     "current_profile_id",
+		Value:    profileID,
+		Path:     "/",
+		MaxAge:   30 * 24 * 60 * 60, // 30 days
+		HttpOnly: true,
+		Secure:   middleware.IsSecureRequest(r), // Set Secure flag for HTTPS connections
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// Return success (client will handle page reload)
+	w.WriteHeader(http.StatusOK)
+}
+
+// ProfileSwitcherPartial returns the profile switcher component (for HTMX)
+func (h *Handler) ProfileSwitcherPartial(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	// Get CSRF token
+	csrfToken := h.csrf.GetToken(r)
+
+	// Get current profile ID from cookie
+	var currentProfileID string
+	if cookie, err := r.Cookie("current_profile_id"); err == nil {
+		currentProfileID = cookie.Value
+	}
+
+	// Fetch all profiles
+	profiles, err := h.collector.GetProfiles(ctx)
+	if err != nil {
+		slog.Error("Failed to fetch profiles for switcher", "error", err)
+		// Return empty/error state
+		profiles = []collector.Profile{}
+	}
+
+	// Render profile switcher component
+	component := components.ProfileSwitcher(profiles, currentProfileID, csrfToken)
+	component.Render(r.Context(), w)
+}
+
+// ProfileEditPage renders the profile edit page for the current user
+func (h *Handler) ProfileEditPage(w http.ResponseWriter, r *http.Request) {
+	// Get current profile ID from middleware context
+	profileID, ok := r.Context().Value(middleware.ProfileIDKey).(string)
+	if !ok || profileID == "" {
+		http.Redirect(w, r, "/profiles/setup", http.StatusSeeOther)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	// Fetch current profile from collector
+	profile, err := h.collector.GetProfile(ctx, profileID)
+	if err != nil {
+		slog.Error("Failed to fetch profile for editing", "profile_id", profileID, "error", err)
+		http.Error(w, "Profile not found", http.StatusNotFound)
+		return
+	}
+
+	// Get CSRF token
+	csrfToken := h.csrf.GetToken(r)
+
+	// Render profile edit page
+	component := pages.ProfileEdit(*profile, csrfToken)
+	component.Render(r.Context(), w)
+}
+
+// UpdateProfileHandler handles profile update requests (PATCH /api/profile)
+func (h *Handler) UpdateProfileHandler(w http.ResponseWriter, r *http.Request) {
+	// Get current profile ID from middleware context
+	profileID, ok := r.Context().Value(middleware.ProfileIDKey).(string)
+	if !ok || profileID == "" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Parse form data
+	if err := r.ParseForm(); err != nil {
+		respondWithError(w, "Invalid form data", "Form parse error", err, http.StatusBadRequest)
+		return
+	}
+
+	nickname := r.FormValue("nickname")
+	userDescription := r.FormValue("user_description")
+
+	// Validate inputs
+	if nickname == "" {
+		respondWithError(w, "Nickname is required", "Nickname validation failed", nil, http.StatusBadRequest)
+		return
+	}
+
+	if len(nickname) > 50 {
+		respondWithError(w, "Nickname too long (max 50 characters)", "Nickname validation failed", nil, http.StatusBadRequest)
+		return
+	}
+
+	if len(userDescription) > 500 {
+		respondWithError(w, "Description too long (max 500 characters)", "Description validation failed", nil, http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	// Update profile via collector API
+	updates := map[string]string{
+		"nickname":         nickname,
+		"user_description": userDescription,
+	}
+
+	err := h.collector.UpdateProfile(ctx, profileID, updates)
+	if err != nil {
+		slog.Error("Failed to update profile", "profile_id", profileID, "error", err)
+		respondWithError(w, "Failed to update profile", "Collector update error", err, http.StatusInternalServerError)
+		return
+	}
+
+	// Return "updating" to trigger frontend polling if description changed
+	// The collector automatically triggers character regeneration when description changes
+	w.Header().Set("HX-Trigger", `{"showToast": "Profile updated!"}`)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("updating"))
+}
+
+// GetProfileStatusAPI returns the character generation status for the current user's profile
+func (h *Handler) GetProfileStatusAPI(w http.ResponseWriter, r *http.Request) {
+	// Get current profile ID from middleware context
+	profileID, ok := r.Context().Value(middleware.ProfileIDKey).(string)
+	if !ok || profileID == "" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	// Get profile status from collector
+	status, err := h.collector.GetProfileStatus(ctx, profileID)
+	if err != nil {
+		slog.Error("Failed to get profile status", "profile_id", profileID, "error", err)
+		http.Error(w, "Failed to get status", http.StatusInternalServerError)
+		return
+	}
+
+	// Return JSON status
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+}
+
+// LikeArticle handles article like requests (HTMX partial)
+func (h *Handler) LikeArticle(w http.ResponseWriter, r *http.Request) {
+	articleID := chi.URLParam(r, "id")
+	profileID := r.FormValue("profile_id")
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	// Get CSRF token
+	csrfToken := h.csrf.GetToken(r)
+
+	// Validate inputs
+	if profileID == "" {
+		respondWithError(w, "Profile required", "Profile ID missing in like request", nil, http.StatusBadRequest)
+		return
+	}
+
+	// Create like via collector API
+	like, err := h.collector.LikeArticle(ctx, articleID, profileID)
+	if err != nil {
+		slog.Error("Failed to like article", "article_id", articleID, "profile_id", profileID, "error", err)
+
+		// Set toast error trigger
+		trigger := map[string]interface{}{
+			"showToast": map[string]string{
+				"type": "error",
+				"text": "Failed to like article",
+			},
+		}
+		if triggerJSON, err := json.Marshal(trigger); err == nil {
+			w.Header().Set("HX-Trigger", string(triggerJSON))
+		}
+
+		// Return the unliked button (rollback)
+		component := components.LikeButton(articleID, false, "", profileID, csrfToken)
+		component.Render(r.Context(), w)
+		return
+	}
+
+	// Return the liked button (new state)
+	component := components.LikeButton(articleID, true, like.ID, profileID, csrfToken)
+	component.Render(r.Context(), w)
+}
+
+// UnlikeArticle handles article unlike requests (HTMX partial)
+func (h *Handler) UnlikeArticle(w http.ResponseWriter, r *http.Request) {
+	likeID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	// Get CSRF token and profile ID from cookie
+	csrfToken := h.csrf.GetToken(r)
+	var profileID string
+	if cookie, err := r.Cookie("current_profile_id"); err == nil {
+		profileID = cookie.Value
+	}
+
+	// Extract article ID from the like button context
+	// Since we're swapping the button, we need to know the article ID to render the new button
+	// We'll need to fetch the like details first, or store articleID in a hidden field
+	// For now, let's accept it as a query parameter
+	articleID := r.URL.Query().Get("article_id")
+	if articleID == "" {
+		// Try to get from form
+		articleID = r.FormValue("article_id")
+	}
+
+	// Delete like via collector API
+	err := h.collector.UnlikeArticle(ctx, likeID)
+	if err != nil {
+		slog.Error("Failed to unlike article", "like_id", likeID, "error", err)
+
+		// Set toast error trigger
+		trigger := map[string]interface{}{
+			"showToast": map[string]string{
+				"type": "error",
+				"text": "Failed to unlike article",
+			},
+		}
+		if triggerJSON, err := json.Marshal(trigger); err == nil {
+			w.Header().Set("HX-Trigger", string(triggerJSON))
+		}
+
+		// Return the liked button (rollback)
+		component := components.LikeButton(articleID, true, likeID, profileID, csrfToken)
+		component.Render(r.Context(), w)
+		return
+	}
+
+	// Return the unliked button (new state)
+	component := components.LikeButton(articleID, false, "", profileID, csrfToken)
+	component.Render(r.Context(), w)
+}
+
+// CreateProfile proxies profile creation to the collector API
+func (h *Handler) CreateProfile(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	nickname := r.FormValue("nickname")
+	userDescription := r.FormValue("user_description")
+
+	if nickname == "" || userDescription == "" {
+		http.Error(w, "nickname and user_description are required", http.StatusBadRequest)
+		return
+	}
+
+	profile, err := h.collector.CreateProfile(ctx, nickname, userDescription)
+	if err != nil {
+		slog.Error("Failed to create profile", "error", err)
+		http.Error(w, "Failed to create profile", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(profile)
+}
+
+// GetProfileStatus proxies profile status requests to the collector API
+func (h *Handler) GetProfileStatus(w http.ResponseWriter, r *http.Request) {
+	profileID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	status, err := h.collector.GetProfileStatus(ctx, profileID)
+	if err != nil {
+		slog.Error("Failed to get profile status", "profile_id", profileID, "error", err)
+		http.Error(w, "Failed to get profile status", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
 }
