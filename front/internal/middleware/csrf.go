@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"net/http"
 )
 
@@ -64,6 +65,13 @@ func (c *CSRF) Validate(next http.Handler) http.Handler {
 		// Get token from cookie
 		cookie, err := r.Cookie(csrfCookieName)
 		if err != nil || cookie.Value == "" {
+			// Log CSRF validation failure with context
+			slog.Warn("CSRF token missing from cookie",
+				"ip", r.RemoteAddr,
+				"path", r.URL.Path,
+				"method", r.Method,
+				"user_agent", r.Header.Get("User-Agent"),
+			)
 			http.Error(w, "CSRF token missing", http.StatusForbidden)
 			return
 		}
@@ -80,6 +88,20 @@ func (c *CSRF) Validate(next http.Handler) http.Handler {
 
 		// Validate token
 		if requestToken == "" || !c.validateToken(expectedToken, requestToken) {
+			// Log CSRF validation failure with context
+			slog.Warn("CSRF token validation failed",
+				"ip", r.RemoteAddr,
+				"path", r.URL.Path,
+				"method", r.Method,
+				"user_agent", r.Header.Get("User-Agent"),
+				"token_present", requestToken != "",
+				"token_source", func() string {
+					if r.Header.Get(csrfHeader) != "" {
+						return "header"
+					}
+					return "form"
+				}(),
+			)
 			http.Error(w, "CSRF token invalid", http.StatusForbidden)
 			return
 		}

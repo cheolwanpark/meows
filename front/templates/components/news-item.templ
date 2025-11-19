@@ -5,7 +5,7 @@ import (
 	"github.com/cheolwanpark/meows/front/internal/models"
 )
 
-templ NewsItem(article models.Article, index int, csrfToken, profileID string) {
+templ NewsItem(article models.Article, index int, profileID string) {
 	<article class="flex gap-3 py-3 px-2 hover:bg-muted/50 rounded-lg transition-colors">
 		<!-- Index number -->
 		<div class="text-muted-foreground text-sm font-mono w-6 flex-shrink-0 pt-1">
@@ -49,7 +49,7 @@ templ NewsItem(article models.Article, index int, csrfToken, profileID string) {
 					</span>
 				}
 				<!-- Like Button -->
-				@LikeButton(article.ID, article.Liked, article.LikeID, profileID, csrfToken)
+				@LikeButton(article.ID, article.Liked, article.LikeID, profileID)
 				<span class="text-[#ff6b35] font-medium">
 					{ article.Source }
 				</span>

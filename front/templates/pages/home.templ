@@ -28,7 +28,7 @@ templ homePageContent(articles []models.Article, csrfToken, profileID string) {
 		} else {
 			<div class="space-y-1 border rounded-lg overflow-hidden bg-card">
 				for i, article := range articles {
-					@components.NewsItem(article, i+1, csrfToken, profileID)
+					@components.NewsItem(article, i+1, profileID)
 				}
 			</div>
 		}

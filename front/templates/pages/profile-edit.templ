@@ -30,7 +30,6 @@ templ profileEditContent(profile collector.Profile, csrfToken string) {
 				@htmx:after-request="handleResponse($event)"
 				class="space-y-6"
 			>
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
 
 				<!-- Nickname Field -->
 				<div>

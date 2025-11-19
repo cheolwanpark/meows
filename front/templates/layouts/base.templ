@@ -26,6 +26,7 @@ templ Base(title string, csrfToken string, content templ.Component) {
 			<link rel="stylesheet" href="/static/css/toast-theme.css"/>
 
 			<!-- Scripts -->
+			<script src="/static/js/csrf-manager.js" defer></script>
 			<script src="/static/js/htmx.min.js" defer></script>
 			<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js" defer></script>
 			<script src="/static/js/toast.js" defer></script>
@@ -39,10 +40,70 @@ templ Base(title string, csrfToken string, content templ.Component) {
 					});
 
 					// Global htmx error handlers - show toast notifications
-					document.body.addEventListener('htmx:responseError', function(evt) {
-						if (!window.toast) return;
-						const message = evt.detail.xhr.statusText || 'An error occurred while processing your request';
-						window.toast.error(message);
+					document.body.addEventListener('htmx:responseError', async function(evt) {
+						const xhr = evt.detail.xhr;
+
+						// Smart 403 CSRF error handling with automatic retry
+						if (xhr.status === 403) {
+							const errorText = xhr.responseText || '';
+							const isCSRFError = errorText.includes('CSRF') ||
+							                   errorText.includes('token') ||
+							                   errorText.includes('Forbidden');
+
+							if (isCSRFError && window.csrf) {
+								const element = evt.detail.elt;
+
+								// Prevent infinite retry loops
+								if (element.dataset.csrfRetried === 'true') {
+									console.error('[CSRF] Retry already attempted, giving up');
+									if (window.toast) {
+										window.toast.error('Session expired. Please refresh the page.');
+									}
+									delete element.dataset.csrfRetried;
+									return;
+								}
+
+								console.warn('[CSRF] Token validation failed, attempting recovery...');
+
+								try {
+									// Refresh token from server
+									const newToken = await window.csrf.refreshToken();
+
+									if (newToken) {
+										console.log('[CSRF] Token refreshed, retrying request...');
+
+										// Mark element as retried
+										element.dataset.csrfRetried = 'true';
+
+										// Retry the request after brief delay
+										setTimeout(() => {
+											htmx.trigger(element, evt.detail.triggerSpec?.trigger || 'click');
+											// Clear retry flag after successful retry
+											setTimeout(() => {
+												delete element.dataset.csrfRetried;
+											}, 1000);
+										}, 500);
+
+										return; // Don't show error toast, we're retrying
+									} else {
+										throw new Error('Token refresh returned null');
+									}
+								} catch (error) {
+									console.error('[CSRF] Recovery failed:', error);
+									if (window.toast) {
+										window.toast.error('Session expired. Please refresh the page.');
+									}
+									delete element.dataset.csrfRetried;
+									return;
+								}
+							}
+						}
+
+						// Default error handling for non-CSRF errors
+						if (window.toast) {
+							const message = xhr.statusText || 'An error occurred while processing your request';
+							window.toast.error(message);
+						}
 					});
 
 					document.body.addEventListener('htmx:sendError', function(evt) {

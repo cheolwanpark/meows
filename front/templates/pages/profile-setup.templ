@@ -236,6 +236,15 @@ templ profileSetupContent(csrfToken string) {
 				},
 
 				async complete() {
+					// Verify CSRF token is available before attempting profile switch
+					const token = window.csrf?.getToken();
+					if (!token) {
+						console.error('[Profile Setup] CSRF token not available in complete()');
+						this.status = 'error';
+						this.errorMsg = 'Security token missing. Please refresh the page and try again.';
+						return;
+					}
+
 					// Set cookie via server (secure HttpOnly cookie)
 					try {
 						const response = await fetch(`/api/profiles/switch/${this.profileId}`, {
@@ -244,7 +253,7 @@ templ profileSetupContent(csrfToken string) {
 								'Content-Type': 'application/x-www-form-urlencoded',
 							},
 							body: new URLSearchParams({
-								csrf_token: document.querySelector('input[name="csrf_token"]').value
+								csrf_token: window.csrf?.getToken() || ''
 							})
 						});
 
@@ -256,6 +265,7 @@ templ profileSetupContent(csrfToken string) {
 							this.errorMsg = 'Failed to activate profile. Please try again.';
 						}
 					} catch (error) {
+						console.error('[Profile Setup] Error during profile switch:', error);
 						this.status = 'error';
 						this.errorMsg = 'Failed to activate profile. Please try again.';
 					}

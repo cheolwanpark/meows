@@ -1,6 +1,6 @@
 package components
 
-templ LikeButton(articleID string, liked bool, likeID string, profileID string, csrfToken string) {
+templ LikeButton(articleID string, liked bool, likeID string, profileID string) {
 	if profileID == "" {
 		<!-- No profile - don't show like button -->
 	} else if liked {
@@ -11,7 +11,6 @@ templ LikeButton(articleID string, liked bool, likeID string, profileID string, 
 			hx-target="this"
 			class="inline-block"
 		>
-			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<input type="hidden" name="article_id" value={ articleID }/>
 			<button
 				type="submit"
@@ -30,7 +29,6 @@ templ LikeButton(articleID string, liked bool, likeID string, profileID string, 
 			hx-target="this"
 			class="inline-block"
 		>
-			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<input type="hidden" name="profile_id" value={ profileID }/>
 			<button
 				type="submit"

@@ -2,7 +2,7 @@ package components
 
 import "github.com/cheolwanpark/meows/front/internal/models"
 
-templ SourceList(sources []models.Source, csrfToken string) {
+templ SourceList(sources []models.Source) {
 	<div id="source-list" class="space-y-3">
 		if len(sources) == 0 {
 			<div class="text-center py-12 text-muted-foreground">
@@ -12,7 +12,7 @@ templ SourceList(sources []models.Source, csrfToken string) {
 			</div>
 		} else {
 			for _, source := range sources {
-				@SourceCard(source, csrfToken)
+				@SourceCard(source)
 			}
 		}
 	</div>

@@ -4,7 +4,7 @@ import (
 	"github.com/cheolwanpark/meows/front/internal/collector"
 )
 
-templ ProfileSwitcher(profiles []collector.Profile, currentProfileID string, csrfToken string) {
+templ ProfileSwitcher(profiles []collector.Profile, currentProfileID string) {
 	if len(profiles) == 0 {
 		<!-- No profiles - show link to setup -->
 		<a href="/profiles/setup" class="text-sm font-medium hover:text-brand transition-colors">
@@ -53,8 +53,7 @@ templ ProfileSwitcher(profiles []collector.Profile, currentProfileID string, csr
 							@htmx:after-request="window.location.reload()"
 							class="block"
 						>
-							<input type="hidden" name="csrf_token" value={ csrfToken }/>
-							<button
+								<button
 								type="submit"
 								class={
 									"w-full text-left px-4 py-2 text-sm hover:bg-muted transition-colors",

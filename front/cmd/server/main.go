@@ -70,6 +70,9 @@ func main() {
 	r.Get("/profiles/switcher", h.ProfileSwitcherPartial)
 	r.Get("/profile", h.ProfileEditPage)
 
+	// CSRF token endpoint (not protected - used to fetch token)
+	r.Get("/api/csrf-token", h.GetCSRFToken)
+
 	// API endpoints (all under /api prefix with CSRF protection)
 	r.Route("/api", func(r chi.Router) {
 		r.Use(csrfMiddleware.Validate)

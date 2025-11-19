@@ -2,7 +2,7 @@ package components
 
 import "github.com/cheolwanpark/meows/front/internal/models"
 
-templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[string]string) {
+templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 	<form
 		hx-post="/api/sources"
 		hx-target="#source-list"
@@ -11,7 +11,6 @@ templ AddSourceForm(csrfToken string, errors models.FormErrors, values map[strin
 		class="space-y-5 p-6 border rounded-lg bg-card"
 		x-data="{ sourceType: 'reddit', mode: 'search', sort: 'hot' }"
 	>
-		<input type="hidden" name="csrf_token" value={ csrfToken }/>
 
 		<h2 class="text-xl font-serif font-bold">Add New Source</h2>
 

@@ -249,7 +249,6 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 	// If there are errors, return form with errors
 	if errors.HasErrors() {
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		csrfToken := h.csrf.GetToken(r)
 		// Preserve form values for user convenience
 		formValues := make(map[string]string)
 		for key, values := range r.Form {
@@ -257,7 +256,7 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 				formValues[key] = values[0]
 			}
 		}
-		component := components.AddSourceForm(csrfToken, errors, formValues)
+		component := components.AddSourceForm(errors, formValues)
 		component.Render(r.Context(), w)
 		return
 	}
@@ -268,8 +267,7 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		slog.Error("Failed to marshal config", "error", err)
 		errors.General = "Failed to create source configuration"
 		w.WriteHeader(http.StatusInternalServerError)
-		csrfToken := h.csrf.GetToken(r)
-		component := components.AddSourceForm(csrfToken, errors, map[string]string{
+		component := components.AddSourceForm(errors, map[string]string{
 			"source_type": sourceType,
 		})
 		component.Render(r.Context(), w)
@@ -288,21 +286,19 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		// Provide user-friendly error message instead of exposing internal errors
 		errors.General = "Failed to create source. Please check your configuration and try again."
 		w.WriteHeader(http.StatusInternalServerError)
-		csrfToken := h.csrf.GetToken(r)
 		formValues := make(map[string]string)
 		for key, values := range r.Form {
 			if len(values) > 0 {
 				formValues[key] = values[0]
 			}
 		}
-		component := components.AddSourceForm(csrfToken, errors, formValues)
+		component := components.AddSourceForm(errors, formValues)
 		component.Render(r.Context(), w)
 		return
 	}
 
 	// Success: return source card for htmx to insert
 	viewSource := models.FromCollectorSource(*source)
-	csrfToken := h.csrf.GetToken(r)
 
 	// Trigger success toast
 	trigger := map[string]interface{}{
@@ -315,7 +311,7 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("HX-Trigger", string(triggerJSON))
 	}
 
-	component := components.SourceCard(viewSource, csrfToken)
+	component := components.SourceCard(viewSource)
 	component.Render(r.Context(), w)
 }
 
@@ -365,8 +361,7 @@ func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return updated source list HTML
-	csrfToken := h.csrf.GetToken(r)
-	component := components.SourceList(viewSources, csrfToken)
+	component := components.SourceList(viewSources)
 	component.Render(r.Context(), w)
 }
 
@@ -415,9 +410,6 @@ func (h *Handler) ProfileSwitcherPartial(w http.ResponseWriter, r *http.Request)
 	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
 	defer cancel()
 
-	// Get CSRF token
-	csrfToken := h.csrf.GetToken(r)
-
 	// Get current profile ID from cookie
 	var currentProfileID string
 	if cookie, err := r.Cookie("current_profile_id"); err == nil {
@@ -433,7 +425,7 @@ func (h *Handler) ProfileSwitcherPartial(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Render profile switcher component
-	component := components.ProfileSwitcher(profiles, currentProfileID, csrfToken)
+	component := components.ProfileSwitcher(profiles, currentProfileID)
 	component.Render(r.Context(), w)
 }
 
@@ -554,9 +546,6 @@ func (h *Handler) LikeArticle(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
 	defer cancel()
 
-	// Get CSRF token
-	csrfToken := h.csrf.GetToken(r)
-
 	// Validate inputs
 	if profileID == "" {
 		respondWithError(w, "Profile required", "Profile ID missing in like request", nil, http.StatusBadRequest)
@@ -580,13 +569,13 @@ func (h *Handler) LikeArticle(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Return the unliked button (rollback)
-		component := components.LikeButton(articleID, false, "", profileID, csrfToken)
+		component := components.LikeButton(articleID, false, "", profileID)
 		component.Render(r.Context(), w)
 		return
 	}
 
 	// Return the liked button (new state)
-	component := components.LikeButton(articleID, true, like.ID, profileID, csrfToken)
+	component := components.LikeButton(articleID, true, like.ID, profileID)
 	component.Render(r.Context(), w)
 }
 
@@ -596,8 +585,7 @@ func (h *Handler) UnlikeArticle(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
 	defer cancel()
 
-	// Get CSRF token and profile ID from cookie
-	csrfToken := h.csrf.GetToken(r)
+	// Get profile ID from cookie
 	var profileID string
 	if cookie, err := r.Cookie("current_profile_id"); err == nil {
 		profileID = cookie.Value
@@ -630,13 +618,13 @@ func (h *Handler) UnlikeArticle(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Return the liked button (rollback)
-		component := components.LikeButton(articleID, true, likeID, profileID, csrfToken)
+		component := components.LikeButton(articleID, true, likeID, profileID)
 		component.Render(r.Context(), w)
 		return
 	}
 
 	// Return the unliked button (new state)
-	component := components.LikeButton(articleID, false, "", profileID, csrfToken)
+	component := components.LikeButton(articleID, false, "", profileID)
 	component.Render(r.Context(), w)
 }
 
@@ -680,4 +668,27 @@ func (h *Handler) GetProfileStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
+}
+
+// GetCSRFToken returns a fresh CSRF token and updates the cookie
+// This endpoint does NOT require CSRF validation (it's used to refresh the token)
+func (h *Handler) GetCSRFToken(w http.ResponseWriter, r *http.Request) {
+	// Get or generate a fresh CSRF token
+	token := h.csrf.GetToken(r)
+
+	// Set/refresh the cookie with the token
+	h.csrf.SetToken(w, r, token)
+
+	// Return token in both JSON body and header for flexibility
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-CSRF-Token", token)
+
+	response := map[string]string{
+		"token": token,
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.Error("Failed to encode CSRF token response", "error", err)
+		http.Error(w, "Failed to get CSRF token", http.StatusInternalServerError)
+		return
+	}
 }

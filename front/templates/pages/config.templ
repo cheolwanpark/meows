@@ -20,12 +20,12 @@ templ configPageContent(sources []models.Source, csrfToken string, errors models
 		</div>
 
 		<!-- Add Source Form -->
-		@components.AddSourceForm(csrfToken, errors, map[string]string{})
+		@components.AddSourceForm(errors, map[string]string{})
 
 		<!-- Sources List -->
 		<div>
 			<h2 class="text-2xl font-serif font-bold mb-4">Your Sources</h2>
-			@components.SourceList(sources, csrfToken)
+			@components.SourceList(sources)
 		</div>
 
 		<!-- Help Section -->

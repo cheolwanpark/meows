@@ -5,7 +5,7 @@ import (
 	"github.com/cheolwanpark/meows/front/internal/models"
 )
 
-templ SourceCard(source models.Source, csrfToken string) {
+templ SourceCard(source models.Source) {
 	<div
 		id={ fmt.Sprintf("source-%s", source.ID) }
 		class={ templ.KV("flex items-center justify-between p-4 rounded-lg border transition-all source-card",true),
