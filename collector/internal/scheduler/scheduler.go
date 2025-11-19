@@ -21,19 +21,21 @@ import (
 type Scheduler struct {
 	cron            *cron.Cron
 	db              *db.DB
-	config          *config.CollectorConfig   // Global configuration from file
-	rateLimiters    map[string]*rate.Limiter  // Long-lived rate limiters per source type
+	config          *config.CollectorConfig       // Global configuration from file
+	rateLimiters    map[string]*rate.Limiter      // Long-lived rate limiters per source type
 	profileService  *personalization.UpdateService    // Profile update service
+	curationService *personalization.CurationService  // Article curation service
 	mu              sync.RWMutex
 	isRunning       bool
 }
 
 // New creates a new Scheduler with configuration from file
-func New(cfg *config.CollectorConfig, database *db.DB, profService *personalization.UpdateService) (*Scheduler, error) {
+func New(cfg *config.CollectorConfig, database *db.DB, profService *personalization.UpdateService, curService *personalization.CurationService) (*Scheduler, error) {
 	s := &Scheduler{
-		db:             database,
-		config:         cfg,
-		profileService: profService,
+		db:              database,
+		config:          cfg,
+		profileService:  profService,
+		curationService: curService,
 	}
 
 	// Create long-lived rate limiters from config
@@ -280,6 +282,11 @@ func (s *Scheduler) runSourcesSequentially(sources []*db.Source, limiter *rate.L
 			continue
 		}
 
+		// BUGFIX: Populate profile_id for all articles (required by schema but not set by sources)
+		for i := range articles {
+			articles[i].ProfileID = src.ProfileID
+		}
+
 		// Store results in per-source atomic transaction
 		tx, err := s.db.Begin()
 		if err != nil {
@@ -324,6 +331,11 @@ func (s *Scheduler) runSourcesSequentially(sources []*db.Source, limiter *rate.L
 				log.Printf("Failed to set source %s to idle: %v", src.ID, err)
 			}
 			continue
+		}
+
+		// Enqueue articles for async curation (non-blocking, best-effort)
+		if s.curationService != nil && len(articles) > 0 {
+			s.curationService.EnqueueArticles(src.ProfileID, articles)
 		}
 
 		// Transaction successful - update timestamps
@@ -394,7 +406,7 @@ func (s *Scheduler) groupSourcesByType(sources []*db.Source) map[string][]*db.So
 
 // getAllSources fetches all sources from the database
 func (s *Scheduler) getAllSources() ([]*db.Source, error) {
-	rows, err := s.db.Query("SELECT id, type, config, external_id, last_run_at, last_success_at, last_error, status, created_at FROM sources")
+	rows, err := s.db.Query("SELECT id, type, config, external_id, profile_id, last_run_at, last_success_at, last_error, status, created_at FROM sources")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sources: %w", err)
 	}
@@ -411,6 +423,7 @@ func (s *Scheduler) getAllSources() ([]*db.Source, error) {
 			&src.Type,
 			&src.Config,
 			&externalID,
+			&src.ProfileID,
 			&lastRunAt,
 			&lastSuccessAt,
 			&lastError,
@@ -469,9 +482,10 @@ func (s *Scheduler) storeArticlesInTx(tx *sql.Tx, articles []db.Article) error {
 	}
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO articles (id, source_id, external_id, title, author, content, url, written_at, metadata, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO articles (id, source_id, external_id, profile_id, title, author, content, url, written_at, metadata, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(source_id, external_id) DO UPDATE SET
+			profile_id = excluded.profile_id,
 			title = excluded.title,
 			author = excluded.author,
 			content = excluded.content,
@@ -489,6 +503,7 @@ func (s *Scheduler) storeArticlesInTx(tx *sql.Tx, articles []db.Article) error {
 			article.ID,
 			article.SourceID,
 			article.ExternalID,
+			article.ProfileID,
 			article.Title,
 			article.Author,
 			article.Content,

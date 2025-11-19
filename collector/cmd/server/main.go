@@ -85,11 +85,25 @@ func main() {
 	)
 	log.Println("Profile service initialized")
 
+	// Initialize curation service with worker pool
+	curationService := personalization.NewCurationService(
+		database,
+		geminiClient,
+		cfg.Collector.Profile.CurationWorkers,
+		cfg.Collector.Profile.CurationEnabled,
+	)
+	log.Printf("Curation service initialized (workers: %d, enabled: %v)",
+		cfg.Collector.Profile.CurationWorkers,
+		cfg.Collector.Profile.CurationEnabled)
+
 	// Initialize scheduler with global configuration from environment variables
-	sched, err := scheduler.New(&cfg.Collector, database, profileService)
+	sched, err := scheduler.New(&cfg.Collector, database, profileService, curationService)
 	if err != nil {
 		log.Fatalf("Failed to initialize scheduler: %v", err)
 	}
+
+	// Start curation service workers
+	curationService.Start()
 
 	// Start scheduler (loads sources from DB, uses environment variables for schedule/credentials)
 	sched.Start()
@@ -147,6 +161,10 @@ func main() {
 		if err := sched.Stop(schedulerCtx); err != nil {
 			log.Printf("Scheduler shutdown error: %v", err)
 		}
+
+		// Stop curation service (drain queue, wait for workers)
+		curationService.Stop()
+		log.Println("Curation service stopped")
 
 		log.Println("Graceful shutdown complete")
 	}

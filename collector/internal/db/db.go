@@ -123,6 +123,18 @@ func (db *DB) createSchema() error {
 		UNIQUE(profile_id, article_id)
 	);
 
+	-- Curated articles table (AI-filtered articles per profile)
+	CREATE TABLE IF NOT EXISTS curated (
+		id TEXT PRIMARY KEY,
+		profile_id TEXT NOT NULL,
+		article_id TEXT NOT NULL,
+		reason TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
+		FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+		UNIQUE(profile_id, article_id)
+	);
+
 	-- Indexes for performance
 	CREATE INDEX IF NOT EXISTS idx_profiles_milestone ON profiles(milestone);
 	CREATE INDEX IF NOT EXISTS idx_profiles_updated_at ON profiles(updated_at);
@@ -134,6 +146,7 @@ func (db *DB) createSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_sources_status ON sources(status);
 	CREATE INDEX IF NOT EXISTS idx_sources_type ON sources(type);
 	CREATE INDEX IF NOT EXISTS idx_likes_profile_created ON likes(profile_id, created_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_curated_profile_created ON curated(profile_id, created_at DESC);
 	`
 
 	_, err := db.Exec(schema)

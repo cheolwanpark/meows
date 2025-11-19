@@ -62,9 +62,11 @@ type GeminiConfig struct {
 // ProfileConfig represents profile-related configuration
 type ProfileConfig struct {
 	DailyCronExpr        string
-	MilestoneThreshold1  int // First milestone threshold (default: 3 likes)
-	MilestoneThreshold2  int // Second milestone threshold (default: 10 likes)
-	MilestoneThreshold3  int // Third milestone threshold (default: 20 likes)
+	MilestoneThreshold1  int  // First milestone threshold (default: 3 likes)
+	MilestoneThreshold2  int  // Second milestone threshold (default: 10 likes)
+	MilestoneThreshold3  int  // Third milestone threshold (default: 20 likes)
+	CurationWorkers      int  // Number of concurrent curation workers (default: 5)
+	CurationEnabled      bool // Enable article curation (default: true)
 }
 
 // LoadConfig loads and validates the configuration from environment variables
@@ -100,6 +102,8 @@ func LoadConfig() (*Config, error) {
 				MilestoneThreshold1: getEnvAsInt("PROFILE_MILESTONE_1", 3),
 				MilestoneThreshold2: getEnvAsInt("PROFILE_MILESTONE_2", 10),
 				MilestoneThreshold3: getEnvAsInt("PROFILE_MILESTONE_3", 20),
+				CurationWorkers:     getEnvAsInt("PROFILE_CURATION_WORKERS", 5),
+				CurationEnabled:     getEnvAsBool("PROFILE_CURATION_ENABLED", true),
 			},
 		},
 	}
