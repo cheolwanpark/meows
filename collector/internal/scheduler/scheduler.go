@@ -21,10 +21,10 @@ import (
 type Scheduler struct {
 	cron            *cron.Cron
 	db              *db.DB
-	config          *config.CollectorConfig       // Global configuration from file
-	rateLimiters    map[string]*rate.Limiter      // Long-lived rate limiters per source type
-	profileService  *personalization.UpdateService    // Profile update service
-	curationService *personalization.CurationService  // Article curation service
+	config          *config.CollectorConfig          // Global configuration from file
+	rateLimiters    map[string]*rate.Limiter         // Long-lived rate limiters per source type
+	profileService  *personalization.UpdateService   // Profile update service
+	curationService *personalization.CurationService // Article curation service
 	mu              sync.RWMutex
 	isRunning       bool
 }
@@ -128,6 +128,29 @@ func (s *Scheduler) RunNow() error {
 	}()
 
 	return nil
+}
+
+// RunSingleSource triggers an immediate crawl for a single source
+// This is a fire-and-forget operation that runs asynchronously
+// NOTE: Status should already be set to "running" by the caller
+func (s *Scheduler) RunSingleSource(src *db.Source) {
+	slog.Info("Triggering manual crawl for source", "source_id", src.ID, "type", src.Type)
+
+	// Get rate limiter for this source type
+	limiter := s.rateLimiters[src.Type]
+	if limiter == nil {
+		slog.Error("No rate limiter found for source type", "type", src.Type, "source_id", src.ID)
+		// Revert status on failure
+		s.updateSourceStatus(src.ID, "idle")
+		return
+	}
+
+	// Run single source (status already set by caller)
+	if err := s.runSingleSource(src, limiter); err != nil {
+		slog.Error("Manual crawl failed", "source_id", src.ID, "error", err)
+	} else {
+		slog.Info("Manual crawl completed successfully", "source_id", src.ID)
+	}
 }
 
 // CheckProfileUpdates checks for profiles that need weekly character updates
@@ -252,9 +275,6 @@ func (s *Scheduler) runAllSources() error {
 // Fetches each source then stores results in per-source atomic transaction
 func (s *Scheduler) runSourcesSequentially(sources []*db.Source, limiter *rate.Limiter) error {
 	for _, src := range sources {
-		// Per-source timeout (5 minutes)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-
 		log.Printf("Processing source %s (type: %s)", src.ID, src.Type)
 
 		// Update status to running
@@ -262,96 +282,104 @@ func (s *Scheduler) runSourcesSequentially(sources []*db.Source, limiter *rate.L
 			log.Printf("Failed to update status for source %s: %v", src.ID, err)
 		}
 
-		// Execute fetch with timeout
-		articles, comments, fetchErr := s.runSourceWithTimeout(ctx, src, limiter)
-
-		// Cancel context immediately (don't defer in loop)
-		cancel()
-
-		// Handle fetch error
-		if fetchErr != nil {
-			log.Printf("Source %s fetch failed: %v", src.ID, fetchErr)
-			s.recordError(src.ID, fetchErr)
-
-			// Update status back to idle
-			if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
-				log.Printf("Failed to set source %s to idle: %v", src.ID, err)
-			}
-
-			// Continue with next source (don't fail entire type group)
+		// Process single source
+		if err := s.runSingleSource(src, limiter); err != nil {
+			log.Printf("Source %s processing failed: %v", src.ID, err)
+			// Error already recorded by runSingleSource, continue with next source
 			continue
 		}
-
-		// BUGFIX: Populate profile_id for all articles (required by schema but not set by sources)
-		for i := range articles {
-			articles[i].ProfileID = src.ProfileID
-		}
-
-		// Store results in per-source atomic transaction
-		tx, err := s.db.Begin()
-		if err != nil {
-			log.Printf("Source %s: failed to begin transaction: %v", src.ID, err)
-			s.recordError(src.ID, fmt.Errorf("failed to begin transaction: %w", err))
-
-			if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
-				log.Printf("Failed to set source %s to idle: %v", src.ID, err)
-			}
-			continue
-		}
-		defer tx.Rollback() // Safe: no-op if commit succeeds
-
-		// Store articles
-		if err := s.storeArticlesInTx(tx, articles); err != nil {
-			log.Printf("Source %s: failed to store articles: %v", src.ID, err)
-			s.recordError(src.ID, fmt.Errorf("failed to store articles: %w", err))
-
-			if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
-				log.Printf("Failed to set source %s to idle: %v", src.ID, err)
-			}
-			continue
-		}
-
-		// Store comments
-		if err := s.storeCommentsInTx(tx, comments); err != nil {
-			log.Printf("Source %s: failed to store comments: %v", src.ID, err)
-			s.recordError(src.ID, fmt.Errorf("failed to store comments: %w", err))
-
-			if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
-				log.Printf("Failed to set source %s to idle: %v", src.ID, err)
-			}
-			continue
-		}
-
-		// Commit transaction
-		if err := tx.Commit(); err != nil {
-			log.Printf("Source %s: failed to commit transaction: %v", src.ID, err)
-			s.recordError(src.ID, fmt.Errorf("failed to commit transaction: %w", err))
-
-			if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
-				log.Printf("Failed to set source %s to idle: %v", src.ID, err)
-			}
-			continue
-		}
-
-		// Enqueue articles for async curation (non-blocking, best-effort)
-		if s.curationService != nil && len(articles) > 0 {
-			s.curationService.EnqueueArticles(src.ProfileID, articles)
-		}
-
-		// Transaction successful - update timestamps
-		now := time.Now()
-		_, err = s.db.Exec(
-			"UPDATE sources SET last_run_at = ?, last_success_at = ?, last_error = NULL, status = ? WHERE id = ?",
-			now, now, "idle", src.ID,
-		)
-		if err != nil {
-			log.Printf("Source %s: failed to update timestamps: %v", src.ID, err)
-			// Don't treat this as a critical error - data was stored successfully
-		}
-
-		log.Printf("Source %s completed successfully: %d articles, %d comments inserted", src.ID, len(articles), len(comments))
 	}
 
+	return nil
+}
+
+// runSingleSource processes a single source (fetch, store, update status)
+// Assumes status is already set to "running" by caller
+// This is the primitive operation that all source processing builds upon
+func (s *Scheduler) runSingleSource(src *db.Source, limiter *rate.Limiter) error {
+	// Per-source timeout (5 minutes)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Execute fetch with timeout
+	articles, comments, fetchErr := s.runSourceWithTimeout(ctx, src, limiter)
+
+	// Handle fetch error
+	if fetchErr != nil {
+		s.recordError(src.ID, fetchErr)
+
+		// Update status back to idle
+		if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
+			log.Printf("Failed to set source %s to idle: %v", src.ID, err)
+		}
+
+		return fetchErr
+	}
+
+	// BUGFIX: Populate profile_id for all articles (required by schema but not set by sources)
+	for i := range articles {
+		articles[i].ProfileID = src.ProfileID
+	}
+
+	// Store results in per-source atomic transaction
+	tx, err := s.db.Begin()
+	if err != nil {
+		s.recordError(src.ID, fmt.Errorf("failed to begin transaction: %w", err))
+
+		if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
+			log.Printf("Failed to set source %s to idle: %v", src.ID, err)
+		}
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback() // Safe: no-op if commit succeeds
+
+	// Store articles
+	if err := s.storeArticlesInTx(tx, articles); err != nil {
+		s.recordError(src.ID, fmt.Errorf("failed to store articles: %w", err))
+
+		if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
+			log.Printf("Failed to set source %s to idle: %v", src.ID, err)
+		}
+		return fmt.Errorf("failed to store articles: %w", err)
+	}
+
+	// Store comments
+	if err := s.storeCommentsInTx(tx, comments); err != nil {
+		s.recordError(src.ID, fmt.Errorf("failed to store comments: %w", err))
+
+		if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
+			log.Printf("Failed to set source %s to idle: %v", src.ID, err)
+		}
+		return fmt.Errorf("failed to store comments: %w", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		s.recordError(src.ID, fmt.Errorf("failed to commit transaction: %w", err))
+
+		if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
+			log.Printf("Failed to set source %s to idle: %v", src.ID, err)
+		}
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Enqueue articles for async curation (non-blocking, best-effort)
+	if s.curationService != nil && len(articles) > 0 {
+		s.curationService.EnqueueArticles(src.ProfileID, articles)
+	}
+
+	// Transaction successful - update timestamps
+	now := time.Now()
+	_, err = s.db.Exec(
+		"UPDATE sources SET last_run_at = ?, last_success_at = ?, last_error = NULL, status = ? WHERE id = ?",
+		now, now, "idle", src.ID,
+	)
+	if err != nil {
+		log.Printf("Source %s: failed to update timestamps: %v", src.ID, err)
+		// Don't treat this as a critical error - data was stored successfully
+	}
+
+	log.Printf("Source %s completed successfully: %d articles, %d comments inserted", src.ID, len(articles), len(comments))
 	return nil
 }
 

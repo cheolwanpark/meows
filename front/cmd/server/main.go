@@ -78,6 +78,7 @@ func main() {
 		r.Use(csrfMiddleware.Validate)
 		r.Post("/sources", h.CreateSource)
 		r.Delete("/sources/{id}", h.DeleteSource)
+		r.Post("/sources/{id}/trigger", h.TriggerSource)
 		r.Post("/profiles", h.CreateProfile)
 		r.Get("/profiles/{id}/status", h.GetProfileStatus)
 		r.Post("/profiles/switch/{id}", h.SwitchProfile)

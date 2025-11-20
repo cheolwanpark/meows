@@ -32,6 +32,7 @@ func SetupRouter(database *db.DB, sched *scheduler.Scheduler, profService *perso
 		r.Get("/{id}", h.GetSource)
 		r.Put("/{id}", h.UpdateSource)
 		r.Delete("/{id}", h.DeleteSource)
+		r.Post("/{id}/trigger", h.TriggerSource)
 		r.Delete("/{type}/{external_id}", h.DeleteSourceByTypeAndExternalID)
 	})
 

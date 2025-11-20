@@ -365,6 +365,60 @@ func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 	component.Render(r.Context(), w)
 }
 
+// TriggerSource handles manual source trigger (htmx endpoint)
+func (h *Handler) TriggerSource(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		respondWithError(w, "Source ID is missing", "Missing source ID in request", nil, http.StatusBadRequest)
+		return
+	}
+
+	// Trigger source via collector
+	if err := h.collector.TriggerSource(ctx, id); err != nil {
+		// Check status code using type assertion
+		if statusErr, ok := err.(*collector.StatusError); ok {
+			switch statusErr.StatusCode {
+			case http.StatusConflict:
+				// 409: Source is already running
+				trigger := map[string]interface{}{
+					"showToast": map[string]string{
+						"type": "info",
+						"text": "Source is already running",
+					},
+				}
+				if triggerJSON, err := json.Marshal(trigger); err == nil {
+					w.Header().Set("HX-Trigger", string(triggerJSON))
+				}
+				w.WriteHeader(http.StatusOK)
+				return
+			case http.StatusNotFound:
+				// 404: Source not found (shouldn't happen with valid UI, but handle it)
+				respondWithError(w, "Source not found. Please refresh the page.", "Source not found", err, http.StatusNotFound)
+				return
+			}
+		}
+
+		respondWithError(w, "Failed to trigger crawl. Please try again.", "Failed to trigger source", err, http.StatusInternalServerError)
+		return
+	}
+
+	// Success toast
+	trigger := map[string]interface{}{
+		"showToast": map[string]string{
+			"type": "success",
+			"text": "Crawl started! Check back in a few moments.",
+		},
+	}
+	if triggerJSON, err := json.Marshal(trigger); err == nil {
+		w.Header().Set("HX-Trigger", string(triggerJSON))
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 // ProfileSetup renders the profile setup page
 func (h *Handler) ProfileSetup(w http.ResponseWriter, r *http.Request) {
 	// Get CSRF token

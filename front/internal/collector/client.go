@@ -38,8 +38,8 @@ type Article struct {
 	WrittenAt  time.Time       `json:"written_at"`
 	Metadata   json.RawMessage `json:"metadata,omitempty"`
 	CreatedAt  time.Time       `json:"created_at"`
-	Liked      bool            `json:"liked,omitempty"`      // Only populated when profile_id provided
-	LikeID     string          `json:"like_id,omitempty"`    // Only populated when liked=true
+	Liked      bool            `json:"liked,omitempty"`   // Only populated when profile_id provided
+	LikeID     string          `json:"like_id,omitempty"` // Only populated when liked=true
 }
 
 // Source represents a crawling source from the collector
@@ -109,6 +109,16 @@ type ProfileStatus struct {
 // ErrorResponse represents an error response from the collector
 type ErrorResponse struct {
 	Error string `json:"error"`
+}
+
+// StatusError wraps an HTTP error with its status code
+type StatusError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("collector error (status %d): %s", e.StatusCode, e.Message)
 }
 
 // GetArticles fetches articles from the collector
@@ -218,6 +228,28 @@ func (c *Client) DeleteSource(ctx context.Context, id string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		return c.parseError(resp)
+	}
+
+	return nil
+}
+
+// TriggerSource triggers an immediate crawl for a specific source
+func (c *Client) TriggerSource(ctx context.Context, id string) error {
+	url := fmt.Sprintf("%s/sources/%s/trigger", c.baseURL, id)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
 		return c.parseError(resp)
 	}
 
@@ -522,7 +554,13 @@ func (c *Client) UnlikeArticle(ctx context.Context, likeID string) error {
 func (c *Client) parseError(resp *http.Response) error {
 	var errResp ErrorResponse
 	if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
-		return fmt.Errorf("collector returned status %d", resp.StatusCode)
+		return &StatusError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("status %d", resp.StatusCode),
+		}
 	}
-	return fmt.Errorf("collector error (status %d): %s", resp.StatusCode, errResp.Error)
+	return &StatusError{
+		StatusCode: resp.StatusCode,
+		Message:    errResp.Error,
+	}
 }
