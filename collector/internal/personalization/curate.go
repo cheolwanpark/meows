@@ -2,7 +2,6 @@ package personalization
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -25,11 +24,11 @@ Your task is to determine if an article is relevant and interesting to the user.
 Be thoughtful but concise in your reasoning.`
 
 	// Curation service configuration constants
-	curationJobBufferSize   = 100                   // Buffer 100 jobs (~10 seconds of work at 10 req/sec)
+	curationJobBufferSize   = 100                    // Buffer 100 jobs (~10 seconds of work at 10 req/sec)
 	curationRateLimit       = 100 * time.Millisecond // 10 requests per second to Gemini API
-	curationRetryDelay      = 1 * time.Second       // Wait 1 second before retry
-	curationAPITimeout      = 10 * time.Second      // Timeout for individual Gemini API calls
-	curationPromptMaxLength = 500                   // Truncate article content to 500 chars to save tokens
+	curationRetryDelay      = 1 * time.Second        // Wait 1 second before retry
+	curationAPITimeout      = 10 * time.Second       // Timeout for individual Gemini API calls
+	curationPromptMaxLength = 500                    // Truncate article content to 500 chars to save tokens
 )
 
 // CurationResult represents the result of article curation
@@ -52,9 +51,9 @@ type CurationService struct {
 	workers int
 	enabled bool
 
-	jobChan    chan CurationJob
-	workerWg   sync.WaitGroup
-	shutdownCh chan struct{}
+	jobChan     chan CurationJob
+	workerWg    sync.WaitGroup
+	shutdownCh  chan struct{}
 	rateLimiter *time.Ticker
 }
 
@@ -249,19 +248,13 @@ func (s *CurationService) curateArticle(ctx context.Context, profile *db.Profile
 	apiCtx, cancel := context.WithTimeout(ctx, curationAPITimeout)
 	defer cancel()
 
-	// Call Gemini API
-	response, err := s.gemini.GenerateContent(apiCtx, gemini.FLASH, prompt, config)
+	// Call Gemini API with typed response
+	result, err := gemini.GenerateContentTyped[CurationResult](s.gemini, apiCtx, gemini.FLASH, prompt, config)
 	if err != nil {
 		return nil, fmt.Errorf("gemini API call failed: %w", err)
 	}
 
-	// Parse structured output
-	var result CurationResult
-	if err := json.Unmarshal([]byte(response), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse curation result: %w", err)
-	}
-
-	return &result, nil
+	return result, nil
 }
 
 // buildCurationPrompt creates the prompt for article curation
