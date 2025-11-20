@@ -153,8 +153,11 @@ func (c *Client) GetArticles(ctx context.Context, limit, offset int, profileID s
 }
 
 // GetSources fetches sources from the collector
-func (c *Client) GetSources(ctx context.Context) ([]Source, error) {
+func (c *Client) GetSources(ctx context.Context, profileID string) ([]Source, error) {
 	url := fmt.Sprintf("%s/sources", c.baseURL)
+	if profileID != "" {
+		url += fmt.Sprintf("?profile_id=%s", profileID)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -213,8 +216,11 @@ func (c *Client) CreateSource(ctx context.Context, req CreateSourceRequest) (*So
 }
 
 // DeleteSource deletes a source from the collector
-func (c *Client) DeleteSource(ctx context.Context, id string) error {
+func (c *Client) DeleteSource(ctx context.Context, id string, profileID string) error {
 	url := fmt.Sprintf("%s/sources/%s", c.baseURL, id)
+	if profileID != "" {
+		url += fmt.Sprintf("?profile_id=%s", profileID)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 	if err != nil {
@@ -235,8 +241,11 @@ func (c *Client) DeleteSource(ctx context.Context, id string) error {
 }
 
 // TriggerSource triggers an immediate crawl for a specific source
-func (c *Client) TriggerSource(ctx context.Context, id string) error {
+func (c *Client) TriggerSource(ctx context.Context, id string, profileID string) error {
 	url := fmt.Sprintf("%s/sources/%s/trigger", c.baseURL, id)
+	if profileID != "" {
+		url += fmt.Sprintf("?profile_id=%s", profileID)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
 	if err != nil {

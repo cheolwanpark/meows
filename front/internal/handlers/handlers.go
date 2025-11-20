@@ -68,10 +68,7 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 	h.csrf.SetToken(w, r, csrfToken)
 
 	// Get profile ID from middleware context (if available)
-	var profileID string
-	if cookie, err := r.Cookie("current_profile_id"); err == nil {
-		profileID = cookie.Value
-	}
+	profileID, _ := middleware.GetProfileID(r)
 
 	// Fetch articles from collector (with profile context for like status)
 	collectorArticles, err := h.collector.GetArticles(ctx, DefaultArticleLimit, DefaultArticleOffset, profileID)
@@ -88,7 +85,7 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch sources to build source type lookup map (avoids N+1 queries)
-	collectorSources, err := h.collector.GetSources(ctx)
+	collectorSources, err := h.collector.GetSources(ctx, profileID)
 	if err != nil {
 		slog.Error("Failed to fetch sources", "error", err)
 		// Continue with empty map if sources fetch fails
@@ -182,8 +179,11 @@ func (h *Handler) SourcesPage(w http.ResponseWriter, r *http.Request) {
 	csrfToken := h.csrf.GetToken(r)
 	h.csrf.SetToken(w, r, csrfToken)
 
+	// Get profile ID from middleware context
+	profileID, _ := middleware.GetProfileID(r)
+
 	// Fetch sources from collector
-	collectorSources, err := h.collector.GetSources(ctx)
+	collectorSources, err := h.collector.GetSources(ctx, profileID)
 	if err != nil {
 		slog.Error("Failed to fetch sources", "error", err)
 		// Render error page with proper HTTP status
@@ -274,10 +274,27 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get profile ID from middleware context
+	profileID, ok := middleware.GetProfileID(r)
+	if !ok || profileID == "" {
+		errors.General = "Please select a profile first"
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		formValues := make(map[string]string)
+		for key, values := range r.Form {
+			if len(values) > 0 {
+				formValues[key] = values[0]
+			}
+		}
+		component := components.AddSourceForm(errors, formValues)
+		component.Render(r.Context(), w)
+		return
+	}
+
 	// Create source via collector
 	createReq := collector.CreateSourceRequest{
-		Type:   sourceType,
-		Config: configJSON,
+		Type:      sourceType,
+		Config:    configJSON,
+		ProfileID: profileID,
 	}
 
 	source, err := h.collector.CreateSource(ctx, createReq)
@@ -326,14 +343,17 @@ func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get profile ID from middleware context
+	profileID, _ := middleware.GetProfileID(r)
+
 	// Delete source via collector
-	if err := h.collector.DeleteSource(ctx, id); err != nil {
+	if err := h.collector.DeleteSource(ctx, id, profileID); err != nil {
 		respondWithError(w, "Failed to delete source. Please try again.", "Failed to delete source", err, http.StatusInternalServerError)
 		return
 	}
 
 	// Fetch updated source list
-	sources, err := h.collector.GetSources(ctx)
+	sources, err := h.collector.GetSources(ctx, profileID)
 	if err != nil {
 		slog.Error("Failed to fetch sources after deletion", "error", err)
 		// Source was deleted successfully, but we can't render the updated list
@@ -376,8 +396,11 @@ func (h *Handler) TriggerSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get profile ID from middleware context
+	profileID, _ := middleware.GetProfileID(r)
+
 	// Trigger source via collector
-	if err := h.collector.TriggerSource(ctx, id); err != nil {
+	if err := h.collector.TriggerSource(ctx, id, profileID); err != nil {
 		// Check status code using type assertion
 		if statusErr, ok := err.(*collector.StatusError); ok {
 			switch statusErr.StatusCode {

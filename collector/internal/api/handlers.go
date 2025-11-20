@@ -116,12 +116,19 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 // @Router /sources [get]
 func (h *Handler) ListSources(w http.ResponseWriter, r *http.Request) {
 	sourceType := r.URL.Query().Get("type")
+	profileID := r.URL.Query().Get("profile_id")
 
-	query := "SELECT id, type, config, external_id, last_run_at, last_success_at, last_error, status, created_at FROM sources"
-	args := []interface{}{}
+	// Require profile_id for authorization
+	if profileID == "" {
+		respondError(w, http.StatusBadRequest, "profile_id is required")
+		return
+	}
+
+	query := "SELECT id, type, config, external_id, last_run_at, last_success_at, last_error, status, created_at FROM sources WHERE profile_id = ?"
+	args := []interface{}{profileID}
 
 	if sourceType != "" {
-		query += " WHERE type = ?"
+		query += " AND type = ?"
 		args = append(args, sourceType)
 	}
 
@@ -193,6 +200,13 @@ func (h *Handler) ListSources(w http.ResponseWriter, r *http.Request) {
 // @Router /sources/{id} [get]
 func (h *Handler) GetSource(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	profileID := r.URL.Query().Get("profile_id")
+
+	// Require profile_id for authorization
+	if profileID == "" {
+		respondError(w, http.StatusBadRequest, "profile_id is required")
+		return
+	}
 
 	var src db.Source
 	var lastRunAt, lastSuccessAt sql.NullTime
@@ -200,8 +214,8 @@ func (h *Handler) GetSource(w http.ResponseWriter, r *http.Request) {
 
 	err := h.db.QueryRow(`
 		SELECT id, type, config, external_id, last_run_at, last_success_at, last_error, status, created_at
-		FROM sources WHERE id = ?
-	`, id).Scan(
+		FROM sources WHERE id = ? AND profile_id = ?
+	`, id, profileID).Scan(
 		&src.ID,
 		&src.Type,
 		&src.Config,
@@ -253,6 +267,13 @@ func (h *Handler) GetSource(w http.ResponseWriter, r *http.Request) {
 // @Router /sources/{id} [put]
 func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	profileID := r.URL.Query().Get("profile_id")
+
+	// Require profile_id for authorization
+	if profileID == "" {
+		respondError(w, http.StatusBadRequest, "profile_id is required")
+		return
+	}
 
 	var req UpdateSourceRequest
 
@@ -261,12 +282,12 @@ func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch existing source
+	// Fetch existing source with profile ownership check
 	var src db.Source
 	var lastRunAt, lastSuccessAt sql.NullTime
 	var lastError, externalID sql.NullString
 
-	err := h.db.QueryRow("SELECT id, type, config, external_id, last_run_at, last_success_at, last_error, status, created_at FROM sources WHERE id = ?", id).
+	err := h.db.QueryRow("SELECT id, type, config, external_id, last_run_at, last_success_at, last_error, status, created_at FROM sources WHERE id = ? AND profile_id = ?", id, profileID).
 		Scan(&src.ID, &src.Type, &src.Config, &externalID, &lastRunAt, &lastSuccessAt, &lastError, &src.Status, &src.CreatedAt)
 
 	if err == sql.ErrNoRows {
@@ -304,13 +325,22 @@ func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 		src.ExternalID = newExternalID
 	}
 
-	// Update database
-	_, err = h.db.Exec(`
-		UPDATE sources SET config = ?, external_id = ? WHERE id = ?
-	`, src.Config, src.ExternalID, id)
-
+	// Update database with profile ownership check
+	result, err := h.db.Exec("UPDATE sources SET config = ?, external_id = ? WHERE id = ? AND profile_id = ?", src.Config, src.ExternalID, id, profileID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update source: %v", err))
+		return
+	}
+
+	// Check if any rows were affected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to verify update: %v", err))
+		return
+	}
+
+	if rowsAffected == 0 {
+		respondError(w, http.StatusNotFound, "source not found")
 		return
 	}
 
@@ -332,11 +362,18 @@ func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 // @Router /sources/{id} [delete]
 func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	profileID := r.URL.Query().Get("profile_id")
+
+	// Require profile_id for authorization
+	if profileID == "" {
+		respondError(w, http.StatusBadRequest, "profile_id is required")
+		return
+	}
 
 	// No need to unregister job - scheduler loads all sources dynamically
 
-	// Delete from database (cascade deletes articles and comments)
-	result, err := h.db.Exec("DELETE FROM sources WHERE id = ?", id)
+	// Delete from database (cascade deletes articles and comments) with profile ownership check
+	result, err := h.db.Exec("DELETE FROM sources WHERE id = ? AND profile_id = ?", id, profileID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to delete source: %v", err))
 		return
@@ -367,6 +404,13 @@ func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DeleteSourceByTypeAndExternalID(w http.ResponseWriter, r *http.Request) {
 	sourceType := chi.URLParam(r, "type")
 	externalID := chi.URLParam(r, "external_id")
+	profileID := r.URL.Query().Get("profile_id")
+
+	// Require profile_id for authorization
+	if profileID == "" {
+		respondError(w, http.StatusBadRequest, "profile_id is required")
+		return
+	}
 
 	// Validate type (whitelist)
 	if sourceType != "reddit" && sourceType != "semantic_scholar" {
@@ -384,26 +428,10 @@ func (h *Handler) DeleteSourceByTypeAndExternalID(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Fetch source to get UUID
-	var sourceID string
-	err := h.db.QueryRow(
-		"SELECT id FROM sources WHERE type = ? AND external_id = ?",
-		sourceType, externalID,
-	).Scan(&sourceID)
-
-	if err == sql.ErrNoRows {
-		respondError(w, http.StatusNotFound, "source not found")
-		return
-	}
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to fetch source: %v", err))
-		return
-	}
-
 	// No need to unregister job - scheduler loads all sources dynamically
 
-	// Delete from database (cascade deletes articles and comments)
-	result, err := h.db.Exec("DELETE FROM sources WHERE id = ?", sourceID)
+	// Delete directly from database with profile ownership check (cascade deletes articles and comments)
+	result, err := h.db.Exec("DELETE FROM sources WHERE type = ? AND external_id = ? AND profile_id = ?", sourceType, externalID, profileID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to delete source: %v", err))
 		return
@@ -434,19 +462,27 @@ func (h *Handler) DeleteSourceByTypeAndExternalID(w http.ResponseWriter, r *http
 // @Router /sources/{id}/trigger [post]
 func (h *Handler) TriggerSource(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	profileID := r.URL.Query().Get("profile_id")
+
+	// Require profile_id for authorization
+	if profileID == "" {
+		respondError(w, http.StatusBadRequest, "profile_id is required")
+		return
+	}
 
 	// Atomically claim the source by updating status only if not already running
+	// Include profile ownership check
 	result, err := h.db.Exec(`
 		UPDATE sources
 		SET status = 'running'
-		WHERE id = ? AND status != 'running'
-	`, id)
+		WHERE id = ? AND status != 'running' AND profile_id = ?
+	`, id, profileID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update status: %v", err))
 		return
 	}
 
-	// Check if update actually happened (0 rows = either not found or already running)
+	// Check if update actually happened (0 rows = either not found, already running, or not owned)
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to check rows affected: %v", err))
@@ -454,9 +490,9 @@ func (h *Handler) TriggerSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if rowsAffected == 0 {
-		// Either source doesn't exist or is already running - check which
+		// Either source doesn't exist, is already running, or not owned - check which
 		var exists bool
-		err := h.db.QueryRow("SELECT 1 FROM sources WHERE id = ?", id).Scan(&exists)
+		err := h.db.QueryRow("SELECT 1 FROM sources WHERE id = ? AND profile_id = ?", id, profileID).Scan(&exists)
 		if err == sql.ErrNoRows {
 			respondError(w, http.StatusNotFound, "source not found")
 			return
@@ -470,7 +506,7 @@ func (h *Handler) TriggerSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch source details for the goroutine
+	// Fetch source details for the goroutine with profile ownership check
 	var src db.Source
 	var lastRunAt, lastSuccessAt sql.NullTime
 	var lastError, externalID sql.NullString
@@ -478,15 +514,15 @@ func (h *Handler) TriggerSource(w http.ResponseWriter, r *http.Request) {
 	err = h.db.QueryRow(`
 		SELECT id, type, config, external_id, profile_id, last_run_at, last_success_at,
 		       last_error, status, created_at
-		FROM sources WHERE id = ?
-	`, id).Scan(
+		FROM sources WHERE id = ? AND profile_id = ?
+	`, id, profileID).Scan(
 		&src.ID, &src.Type, &src.Config, &externalID, &src.ProfileID,
 		&lastRunAt, &lastSuccessAt, &lastError, &src.Status, &src.CreatedAt,
 	)
 
 	if err != nil {
 		// Revert status update since we can't proceed
-		h.db.Exec("UPDATE sources SET status = 'idle' WHERE id = ?", id)
+		h.db.Exec("UPDATE sources SET status = 'idle' WHERE id = ? AND profile_id = ?", id, profileID)
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to fetch source: %v", err))
 		return
 	}
