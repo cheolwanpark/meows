@@ -285,8 +285,12 @@ type ArticleDetail struct {
 }
 
 // GetArticle fetches a single article with its comments from the collector
-func (c *Client) GetArticle(ctx context.Context, id string) (*ArticleDetail, error) {
+// profileID is optional - if provided, article will include like status for that profile
+func (c *Client) GetArticle(ctx context.Context, id string, profileID string) (*ArticleDetail, error) {
 	url := fmt.Sprintf("%s/articles/%s", c.baseURL, id)
+	if profileID != "" {
+		url += fmt.Sprintf("?profile_id=%s", profileID)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {

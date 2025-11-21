@@ -8,11 +8,11 @@ import (
 	"github.com/cheolwanpark/meows/front/internal/models"
 )
 
-templ ArticleDetailPage(article models.Article, comments []collector.Comment, csrfToken string) {
-	@layouts.Base(article.Title, csrfToken, articleDetailContent(article, comments))
+templ ArticleDetailPage(article models.Article, comments []collector.Comment, csrfToken string, profileID string) {
+	@layouts.Base(article.Title, csrfToken, articleDetailContent(article, comments, profileID))
 }
 
-templ articleDetailContent(article models.Article, comments []collector.Comment) {
+templ articleDetailContent(article models.Article, comments []collector.Comment, profileID string) {
 	<div class="space-y-6">
 		<!-- Breadcrumb navigation -->
 		<nav class="flex items-center gap-2 text-sm text-muted-foreground">
@@ -57,6 +57,10 @@ templ articleDetailContent(article models.Article, comments []collector.Comment)
 					<span class="text-[#ff6b35] font-medium">
 						{ article.Source }
 					</span>
+					if profileID != "" {
+						<span>•</span>
+						@components.LikeButton(article.ID, article.Liked, article.LikeID, profileID)
+					}
 				</div>
 			</header>
 

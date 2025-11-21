@@ -762,9 +762,9 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 
 // ArticleDetailResponse represents an article with its comments
 type ArticleDetailResponse struct {
-	Article    db.Article   `json:"article"`
-	Comments   []db.Comment `json:"comments"`
-	SourceType string       `json:"source_type"` // "reddit" or "semantic_scholar"
+	Article    ArticleWithLikeStatus `json:"article"`
+	Comments   []db.Comment          `json:"comments"`
+	SourceType string                `json:"source_type"` // "reddit" or "semantic_scholar"
 }
 
 // GetArticle godoc
@@ -774,6 +774,7 @@ type ArticleDetailResponse struct {
 // @Accept json
 // @Produce json
 // @Param id path string true "Article ID (UUID)"
+// @Param profile_id query string false "Profile ID for like status"
 // @Success 200 {object} ArticleDetailResponse
 // @Failure 400 {object} ErrorResponse "Invalid article ID format"
 // @Failure 404 {object} ErrorResponse "Article not found"
@@ -781,6 +782,7 @@ type ArticleDetailResponse struct {
 // @Router /articles/{id} [get]
 func (h *Handler) GetArticle(w http.ResponseWriter, r *http.Request) {
 	articleID := chi.URLParam(r, "id")
+	profileID := r.URL.Query().Get("profile_id")
 
 	// Validate UUID format
 	if _, err := uuid.Parse(articleID); err != nil {
@@ -788,34 +790,79 @@ func (h *Handler) GetArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Query article
-	var article db.Article
+	// Query article with like status
+	var article ArticleWithLikeStatus
 	var url, metadata sql.NullString
+	var liked int
 
-	err := h.db.QueryRow(`
-		SELECT id, source_id, external_id, title, author, content, url, written_at, metadata, created_at
-		FROM articles
-		WHERE id = ?
-	`, articleID).Scan(
-		&article.ID,
-		&article.SourceID,
-		&article.ExternalID,
-		&article.Title,
-		&article.Author,
-		&article.Content,
-		&url,
-		&article.WrittenAt,
-		&metadata,
-		&article.CreatedAt,
-	)
+	if profileID != "" {
+		// Validate profile_id UUID format
+		if _, err := uuid.Parse(profileID); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid profile_id format")
+			return
+		}
 
-	if err == sql.ErrNoRows {
-		respondError(w, http.StatusNotFound, "article not found")
-		return
-	}
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query article: %v", err))
-		return
+		// Query with like status for specific profile
+		err := h.db.QueryRow(`
+			SELECT a.id, a.source_id, a.external_id, a.profile_id, a.title, a.author, a.content, a.url, a.written_at, a.metadata, a.created_at,
+			       CASE WHEN l.id IS NOT NULL THEN 1 ELSE 0 END as liked,
+			       COALESCE(l.id, '') as like_id
+			FROM articles a
+			LEFT JOIN likes l ON a.id = l.article_id AND l.profile_id = ?
+			WHERE a.id = ?
+		`, profileID, articleID).Scan(
+			&article.ID,
+			&article.SourceID,
+			&article.ExternalID,
+			&article.ProfileID,
+			&article.Title,
+			&article.Author,
+			&article.Content,
+			&url,
+			&article.WrittenAt,
+			&metadata,
+			&article.CreatedAt,
+			&liked,
+			&article.LikeID,
+		)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				respondError(w, http.StatusNotFound, "article not found")
+				return
+			}
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query article: %v", err))
+			return
+		}
+		article.Liked = liked == 1
+	} else {
+		// Query without like status
+		err := h.db.QueryRow(`
+			SELECT id, source_id, external_id, profile_id, title, author, content, url, written_at, metadata, created_at
+			FROM articles
+			WHERE id = ?
+		`, articleID).Scan(
+			&article.ID,
+			&article.SourceID,
+			&article.ExternalID,
+			&article.ProfileID,
+			&article.Title,
+			&article.Author,
+			&article.Content,
+			&url,
+			&article.WrittenAt,
+			&metadata,
+			&article.CreatedAt,
+		)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				respondError(w, http.StatusNotFound, "article not found")
+				return
+			}
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query article: %v", err))
+			return
+		}
+		article.Liked = false
+		article.LikeID = ""
 	}
 
 	if url.Valid {

@@ -136,8 +136,11 @@ func (h *Handler) ArticleDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get profile ID from middleware context (if available)
+	profileID, _ := middleware.GetProfileID(r)
+
 	// Fetch article detail from collector
-	detail, err := h.collector.GetArticle(ctx, articleID)
+	detail, err := h.collector.GetArticle(ctx, articleID, profileID)
 	if err != nil {
 		slog.Error("Failed to fetch article detail", "article_id", articleID, "error", err)
 
@@ -166,7 +169,7 @@ func (h *Handler) ArticleDetail(w http.ResponseWriter, r *http.Request) {
 	article := models.FromCollectorArticle(detail.Article, detail.SourceType)
 
 	// Render page
-	component := pages.ArticleDetailPage(article, detail.Comments, csrfToken)
+	component := pages.ArticleDetailPage(article, detail.Comments, csrfToken, profileID)
 	component.Render(r.Context(), w)
 }
 
