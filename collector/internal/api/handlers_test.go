@@ -66,16 +66,24 @@ func setupTestProfileService(t *testing.T, database *db.DB) *personalization.Upd
 	return personalization.NewUpdateService(database, geminiClient, 3, 10, 20)
 }
 
+// setupTestScheduler creates a scheduler for routing tests.
+// Passes nil curationService since routing tests don't exercise curation.
+func setupTestScheduler(t *testing.T, database *db.DB, profService *personalization.UpdateService) *scheduler.Scheduler {
+	t.Helper()
+	cfg := setupTestConfig()
+	sched, err := scheduler.New(cfg, database, profService, nil)
+	if err != nil {
+		t.Fatalf("Failed to create scheduler: %v", err)
+	}
+	return sched
+}
+
 func TestDeleteSourceByTypeAndExternalID_InvalidType(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	cfg := setupTestConfig()
 	profService := setupTestProfileService(t, database)
-	sched, err := scheduler.New(cfg, database, profService)
-	if err != nil {
-		t.Fatalf("Failed to create scheduler: %v", err)
-	}
+	sched := setupTestScheduler(t, database, profService)
 	router := SetupRouter(database, sched, profService)
 
 	req := httptest.NewRequest("DELETE", "/sources/invalid_type/test", nil)
@@ -92,12 +100,8 @@ func TestDeleteSourceByTypeAndExternalID_EmptyExternalID(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	cfg := setupTestConfig()
 	profService := setupTestProfileService(t, database)
-	sched, err := scheduler.New(cfg, database, profService)
-	if err != nil {
-		t.Fatalf("Failed to create scheduler: %v", err)
-	}
+	sched := setupTestScheduler(t, database, profService)
 	router := SetupRouter(database, sched, profService)
 
 	req := httptest.NewRequest("DELETE", "/sources/reddit/", nil)
@@ -115,12 +119,8 @@ func TestDeleteSourceByTypeAndExternalID_ExternalIDWithSlash(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	cfg := setupTestConfig()
 	profService := setupTestProfileService(t, database)
-	sched, err := scheduler.New(cfg, database, profService)
-	if err != nil {
-		t.Fatalf("Failed to create scheduler: %v", err)
-	}
+	sched := setupTestScheduler(t, database, profService)
 	router := SetupRouter(database, sched, profService)
 
 	req := httptest.NewRequest("DELETE", "/sources/reddit/test/with/slash", nil)
@@ -138,15 +138,11 @@ func TestDeleteSourceByTypeAndExternalID_NotFound(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	cfg := setupTestConfig()
 	profService := setupTestProfileService(t, database)
-	sched, err := scheduler.New(cfg, database, profService)
-	if err != nil {
-		t.Fatalf("Failed to create scheduler: %v", err)
-	}
+	sched := setupTestScheduler(t, database, profService)
 	router := SetupRouter(database, sched, profService)
 
-	req := httptest.NewRequest("DELETE", "/sources/reddit/nonexistent", nil)
+	req := httptest.NewRequest("DELETE", "/sources/reddit/nonexistent?profile_id=test-profile", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -160,15 +156,11 @@ func TestDeleteSourceByTypeAndExternalID_Success(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	cfg := setupTestConfig()
 	profService := setupTestProfileService(t, database)
-	sched, err := scheduler.New(cfg, database, profService)
-	if err != nil {
-		t.Fatalf("Failed to create scheduler: %v", err)
-	}
+	sched := setupTestScheduler(t, database, profService)
 
 	// Insert a test profile first
-	_, err = database.Exec(`
+	_, err := database.Exec(`
 		INSERT INTO profiles (id, nickname, user_description, created_at)
 		VALUES ('test-profile-id', 'testuser', 'Test user', datetime('now'))
 	`)
@@ -187,7 +179,7 @@ func TestDeleteSourceByTypeAndExternalID_Success(t *testing.T) {
 
 	router := SetupRouter(database, sched, profService)
 
-	req := httptest.NewRequest("DELETE", "/sources/reddit/golang", nil)
+	req := httptest.NewRequest("DELETE", "/sources/reddit/golang?profile_id=test-profile-id", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)

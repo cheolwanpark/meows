@@ -69,7 +69,8 @@ func SetupRouter(database *db.DB, sched *scheduler.Scheduler, profService *perso
 	// 404 handler
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error":"not found"}`))
+		// Ignore write error for 404 response - connection may already be closed
+		_, _ = w.Write([]byte(`{"error":"not found"}`))
 	})
 
 	return r

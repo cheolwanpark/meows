@@ -50,16 +50,6 @@ type redditPost struct {
 
 type redditCommentsResponse []interface{}
 
-type redditComment struct {
-	ID         string      `json:"id"`
-	Body       string      `json:"body"`
-	Author     string      `json:"author"`
-	CreatedUTC float64     `json:"created_utc"`
-	ParentID   string      `json:"parent_id"`
-	Depth      int         `json:"depth"`
-	Replies    interface{} `json:"replies"`
-}
-
 // NewRedditSource creates a new Reddit source
 // Uses credentials from config file
 func NewRedditSource(

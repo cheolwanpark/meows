@@ -16,7 +16,11 @@ func (s *UpdateService) setUpdatingStatus(ctx context.Context, profileID string)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			slog.Error("Failed to rollback transaction", "profile_id", profileID, "error", err)
+		}
+	}()
 
 	_, err = tx.ExecContext(ctx, `
 		UPDATE profiles
@@ -99,7 +103,11 @@ func (s *UpdateService) updateCharacterResult(ctx context.Context, profileID str
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			slog.Error("Failed to rollback transaction", "profile_id", profileID, "error", err)
+		}
+	}()
 
 	now := time.Now()
 	_, err = tx.ExecContext(ctx, `

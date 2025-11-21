@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -101,7 +102,9 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 	// No need to register job - scheduler runs all sources on global schedule
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(toSourceResponse(source))
+	if err := json.NewEncoder(w).Encode(toSourceResponse(source)); err != nil {
+		slog.Error("Failed to encode response", "error", err)
+	}
 }
 
 // ListSources godoc
@@ -184,7 +187,9 @@ func (h *Handler) ListSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(sources)
+	if err := json.NewEncoder(w).Encode(sources); err != nil {
+		slog.Error("Failed to encode sources response", "error", err)
+	}
 }
 
 // GetSource godoc
@@ -249,7 +254,9 @@ func (h *Handler) GetSource(w http.ResponseWriter, r *http.Request) {
 		src.LastError = lastError.String
 	}
 
-	json.NewEncoder(w).Encode(toSourceResponse(&src))
+	if err := json.NewEncoder(w).Encode(toSourceResponse(&src)); err != nil {
+		slog.Error("Failed to encode source response", "error", err)
+	}
 }
 
 // UpdateSource godoc
@@ -346,7 +353,9 @@ func (h *Handler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 
 	// No need to register job - scheduler runs all sources on global schedule
 
-	json.NewEncoder(w).Encode(toSourceResponse(&src))
+	if err := json.NewEncoder(w).Encode(toSourceResponse(&src)); err != nil {
+		slog.Error("Failed to encode source response", "error", err)
+	}
 }
 
 // DeleteSource godoc
@@ -521,8 +530,10 @@ func (h *Handler) TriggerSource(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		// Revert status update since we can't proceed
-		h.db.Exec("UPDATE sources SET status = 'idle' WHERE id = ? AND profile_id = ?", id, profileID)
+		// Revert status update since we can't proceed - best effort
+		if _, err := h.db.Exec("UPDATE sources SET status = 'idle' WHERE id = ? AND profile_id = ?", id, profileID); err != nil {
+			slog.Error("Failed to revert source status after error", "id", id, "error", err)
+		}
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to fetch source: %v", err))
 		return
 	}
@@ -545,9 +556,11 @@ func (h *Handler) TriggerSource(w http.ResponseWriter, r *http.Request) {
 	go h.scheduler.RunSingleSource(&src)
 
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"message": "crawl triggered",
-	})
+	}); err != nil {
+		slog.Error("Failed to encode response", "error", err)
+	}
 }
 
 // GetSchedule godoc
@@ -566,7 +579,9 @@ func (h *Handler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(schedule)
+	if err := json.NewEncoder(w).Encode(schedule); err != nil {
+		slog.Error("Failed to encode schedule response", "error", err)
+	}
 }
 
 // ListArticles godoc
@@ -715,7 +730,9 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		json.NewEncoder(w).Encode(articlesWithLikes)
+		if err := json.NewEncoder(w).Encode(articlesWithLikes); err != nil {
+			slog.Error("Failed to encode articles response", "error", err)
+		}
 	} else {
 		// Return regular articles without like status
 		articles := []db.Article{}
@@ -756,7 +773,9 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		json.NewEncoder(w).Encode(articles)
+		if err := json.NewEncoder(w).Encode(articles); err != nil {
+			slog.Error("Failed to encode articles response", "error", err)
+		}
 	}
 }
 
@@ -920,8 +939,8 @@ func (h *Handler) GetArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build comment tree
-	comments := buildCommentTree(flatComments)
+	// Return comments in flat order - frontend will use ParentID to build tree
+	comments := flatComments
 
 	// Get source type
 	var sourceType string
@@ -938,34 +957,9 @@ func (h *Handler) GetArticle(w http.ResponseWriter, r *http.Request) {
 		SourceType: sourceType,
 	}
 
-	json.NewEncoder(w).Encode(response)
-}
-
-// buildCommentTree converts a flat list of comments into a nested tree structure
-func buildCommentTree(flatComments []db.Comment) []db.Comment {
-	// Create a map of external_id to comment for quick lookup
-	commentMap := make(map[string]*db.Comment)
-	for i := range flatComments {
-		commentMap[flatComments[i].ExternalID] = &flatComments[i]
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.Error("Failed to encode article detail response", "error", err)
 	}
-
-	// Root comments (no parent)
-	var rootComments []db.Comment
-
-	// Build tree by linking children to parents
-	for i := range flatComments {
-		comment := &flatComments[i]
-
-		if comment.ParentID == nil {
-			// Root level comment
-			rootComments = append(rootComments, *comment)
-		}
-		// Note: We return a flat list for now, as the frontend will handle tree rendering
-		// If nested structure is needed, we would build it here using ParentID relationships
-	}
-
-	// For now, return all comments in flat order (frontend will use ParentID to build tree)
-	return flatComments
 }
 
 // Health godoc
@@ -997,7 +991,9 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(health)
+	if err := json.NewEncoder(w).Encode(health); err != nil {
+		slog.Error("Failed to encode health response", "error", err)
+	}
 }
 
 // Metrics godoc
@@ -1049,7 +1045,9 @@ func (h *Handler) Metrics(w http.ResponseWriter, r *http.Request) {
 		metrics.LastCrawl = &lastCrawl.Time
 	}
 
-	json.NewEncoder(w).Encode(metrics)
+	if err := json.NewEncoder(w).Encode(metrics); err != nil {
+		slog.Error("Failed to encode metrics response", "error", err)
+	}
 }
 
 // Note: Global config endpoints (GET/PATCH /config) removed
@@ -1104,7 +1102,9 @@ func (h *Handler) CreateProfile(w http.ResponseWriter, r *http.Request) {
 	h.profileService.UpdateCharacter(r.Context(), profile.ID)
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(profile)
+	if err := json.NewEncoder(w).Encode(profile); err != nil {
+		slog.Error("Failed to encode profile response", "error", err)
+	}
 }
 
 // ListProfiles godoc
@@ -1148,7 +1148,9 @@ func (h *Handler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 		profiles = []db.Profile{}
 	}
 
-	json.NewEncoder(w).Encode(profiles)
+	if err := json.NewEncoder(w).Encode(profiles); err != nil {
+		slog.Error("Failed to encode profiles response", "error", err)
+	}
 }
 
 // GetProfile godoc
@@ -1185,7 +1187,9 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(profile)
+	if err := json.NewEncoder(w).Encode(profile); err != nil {
+		slog.Error("Failed to encode profile response", "error", err)
+	}
 }
 
 // ProfileStatusResponse represents the status of character generation
@@ -1222,7 +1226,9 @@ func (h *Handler) GetProfileStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(status)
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		slog.Error("Failed to encode status response", "error", err)
+	}
 }
 
 // UpdateProfile godoc
@@ -1312,7 +1318,9 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(profile)
+	if err := json.NewEncoder(w).Encode(profile); err != nil {
+		slog.Error("Failed to encode profile response", "error", err)
+	}
 }
 
 // DeleteProfile godoc
@@ -1403,7 +1411,9 @@ func (h *Handler) LikeArticle(w http.ResponseWriter, r *http.Request) {
 	committed := false
 	defer func() {
 		if !committed {
-			tx.Rollback()
+			if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+				slog.Error("Failed to rollback transaction", "error", err)
+			}
 		}
 	}()
 
@@ -1470,7 +1480,9 @@ func (h *Handler) LikeArticle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(like)
+	if err := json.NewEncoder(w).Encode(like); err != nil {
+		slog.Error("Failed to encode like response", "error", err)
+	}
 }
 
 // UnlikeArticle godoc
@@ -1507,7 +1519,9 @@ func (h *Handler) UnlikeArticle(w http.ResponseWriter, r *http.Request) {
 func respondError(w http.ResponseWriter, code int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
+		slog.Error("Failed to encode error response", "error", err)
+	}
 }
 
 func extractExternalID(sourceType string, config json.RawMessage) (string, error) {

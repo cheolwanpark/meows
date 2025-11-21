@@ -140,8 +140,10 @@ func (s *Scheduler) RunSingleSource(src *db.Source) {
 	limiter := s.rateLimiters[src.Type]
 	if limiter == nil {
 		slog.Error("No rate limiter found for source type", "type", src.Type, "source_id", src.ID)
-		// Revert status on failure
-		s.updateSourceStatus(src.ID, "idle")
+		// Revert status on failure - best effort
+		if err := s.updateSourceStatus(src.ID, "idle"); err != nil {
+			slog.Error("Failed to revert source status to idle", "source_id", src.ID, "error", err)
+		}
 		return
 	}
 
@@ -331,7 +333,11 @@ func (s *Scheduler) runSingleSource(src *db.Source, limiter *rate.Limiter) error
 		}
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback() // Safe: no-op if commit succeeds
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			slog.Error("Failed to rollback transaction", "source_id", src.ID, "error", err)
+		}
+	}()
 
 	// Store articles
 	if err := s.storeArticlesInTx(tx, articles); err != nil {
@@ -548,26 +554,6 @@ func (s *Scheduler) storeArticlesInTx(tx *sql.Tx, articles []db.Article) error {
 	return nil
 }
 
-// storeArticles stores articles in the database using UPSERT (legacy wrapper)
-// Deprecated: Use storeArticlesInTx for better transaction control
-func (s *Scheduler) storeArticles(articles []db.Article) error {
-	if len(articles) == 0 {
-		return nil
-	}
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	if err := s.storeArticlesInTx(tx, articles); err != nil {
-		return err
-	}
-
-	return tx.Commit()
-}
-
 // storeCommentsInTx stores comments in the database using UPSERT within a transaction
 // Uses full PUT/overwrite semantics - updates all fields except id and created_at
 func (s *Scheduler) storeCommentsInTx(tx *sql.Tx, comments []db.Comment) error {
@@ -607,26 +593,6 @@ func (s *Scheduler) storeCommentsInTx(tx *sql.Tx, comments []db.Comment) error {
 	}
 
 	return nil
-}
-
-// storeComments stores comments in the database using UPSERT (legacy wrapper)
-// Deprecated: Use storeCommentsInTx for better transaction control
-func (s *Scheduler) storeComments(comments []db.Comment) error {
-	if len(comments) == 0 {
-		return nil
-	}
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	if err := s.storeCommentsInTx(tx, comments); err != nil {
-		return err
-	}
-
-	return tx.Commit()
 }
 
 // GetSchedule returns the global schedule information from config file
