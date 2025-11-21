@@ -70,45 +70,6 @@ func buildRedditConfig(r *http.Request) (map[string]interface{}, error) {
 	}
 	config["user_agent"] = userAgent
 
-	// Required: rate_limit_delay_ms (with default and bounds)
-	rateLimitDelay, err := parseIntWithBounds(r.FormValue("rate_limit_delay_ms"), RedditDefaultRateLimitDelay, RedditMinRateLimitDelay, RedditMaxRateLimitDelay, "rate_limit_delay_ms")
-	if err != nil {
-		return nil, err
-	}
-	config["rate_limit_delay_ms"] = rateLimitDelay
-
-	// Optional: OAuth credentials (all or none)
-	clientID := r.FormValue("oauth_client_id")
-	clientSecret := r.FormValue("oauth_client_secret")
-	username := r.FormValue("oauth_username")
-	password := r.FormValue("oauth_password")
-
-	oauthFieldsProvided := 0
-	if clientID != "" {
-		oauthFieldsProvided++
-	}
-	if clientSecret != "" {
-		oauthFieldsProvided++
-	}
-	if username != "" {
-		oauthFieldsProvided++
-	}
-	if password != "" {
-		oauthFieldsProvided++
-	}
-
-	if oauthFieldsProvided > 0 {
-		if oauthFieldsProvided != 4 {
-			return nil, errors.New("if providing OAuth credentials, all 4 fields (client_id, client_secret, username, password) are required")
-		}
-		config["oauth"] = map[string]string{
-			"client_id":     clientID,
-			"client_secret": clientSecret,
-			"username":      username,
-			"password":      password,
-		}
-	}
-
 	return config, nil
 }
 
@@ -155,13 +116,6 @@ func buildSemanticScholarConfig(r *http.Request) (map[string]interface{}, error)
 	}
 	config["min_citations"] = minCitations
 
-	// Required: rate_limit_delay_ms (with default and bounds)
-	rateLimitDelay, err := parseIntWithBounds(r.FormValue("rate_limit_delay_ms"), S2DefaultRateLimitDelay, S2MinRateLimitDelay, S2MaxRateLimitDelay, "rate_limit_delay_ms")
-	if err != nil {
-		return nil, err
-	}
-	config["rate_limit_delay_ms"] = rateLimitDelay
-
 	// Optional: year filter (with format validation)
 	year := r.FormValue("year")
 	if year != "" {
@@ -170,12 +124,6 @@ func buildSemanticScholarConfig(r *http.Request) (map[string]interface{}, error)
 			return nil, errors.New("year must be in YYYY or YYYY-YYYY format")
 		}
 		config["year"] = year
-	}
-
-	// Optional: API key
-	apiKey := r.FormValue("api_key")
-	if apiKey != "" {
-		config["api_key"] = apiKey
 	}
 
 	return config, nil
@@ -194,19 +142,6 @@ func parseIntWithBounds(s string, defaultVal, min, max int, fieldName string) (i
 		return 0, fmt.Errorf("%s must be between %d and %d", fieldName, min, max)
 	}
 	return val, nil
-}
-
-// parseIntOrDefault parses a string to int, returning defaultVal if empty
-// Deprecated: Use parseIntWithBounds for better validation
-func parseIntOrDefault(s string, defaultVal int) int {
-	if s == "" {
-		return defaultVal
-	}
-	val, err := strconv.Atoi(s)
-	if err != nil {
-		return defaultVal
-	}
-	return val
 }
 
 // isValidYearFormat validates year format as YYYY or YYYY-YYYY

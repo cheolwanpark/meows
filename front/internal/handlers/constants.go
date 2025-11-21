@@ -30,11 +30,6 @@ const (
 	RedditDefaultMinComments = 5
 	RedditMinMinComments     = 0
 	RedditMaxMinComments     = 1000
-
-	// Reddit rate limiting (milliseconds)
-	RedditDefaultRateLimitDelay = 2000
-	RedditMinRateLimitDelay     = 100
-	RedditMaxRateLimitDelay     = 60000
 )
 
 // Semantic Scholar source configuration defaults and constraints
@@ -48,9 +43,4 @@ const (
 	S2DefaultMinCitations = 10
 	S2MinMinCitations     = 0
 	S2MaxMinCitations     = 100000
-
-	// Semantic Scholar rate limiting (milliseconds)
-	S2DefaultRateLimitDelay = 1000
-	S2MinRateLimitDelay     = 100
-	S2MaxRateLimitDelay     = 60000
 )
