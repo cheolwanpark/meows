@@ -17,8 +17,10 @@ services:
     container_name: meows-frontend
     env_file:
       - .env
+    environment:
+      - FRONTEND_COLLECTOR_URL=${FRONTEND_COLLECTOR_URL:-http://collector:${COLLECTOR_PORT}}
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
     depends_on:
       - collector
     restart: unless-stopped

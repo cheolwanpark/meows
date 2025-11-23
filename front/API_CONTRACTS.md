@@ -2,7 +2,7 @@
 
 ## Collector API Endpoints
 
-Base URL: `http://localhost:8080` (configurable via `COLLECTOR_URL` env var)
+Base URL: `http://localhost:8080` (configurable via `FRONTEND_COLLECTOR_URL` env var)
 
 ### Articles
 
@@ -455,13 +455,9 @@ func ParseRedditMetadata(metadata json.RawMessage) (score int, comments int) {
 ### Environment Variables
 ```bash
 # Frontend server
-PORT=3000                          # HTTP server port
-COLLECTOR_URL=http://localhost:8080 # Collector API base URL
-CSRF_KEY=your-secret-key-here      # CSRF token signing key
-
-# Development
-ENV=development                     # "development" or "production"
-LOG_LEVEL=info                      # "debug", "info", "warn", "error"
+FRONTEND_PORT=3000                                 # HTTP server port
+FRONTEND_COLLECTOR_URL=http://localhost:8080       # Collector API base URL
+CSRF_KEY=your-secret-key-here                      # CSRF token signing key
 ```
 
 ### Default Values

@@ -110,7 +110,7 @@ func main() {
 	log.Println("Scheduler started")
 
 	// Setup HTTP router
-	router := api.SetupRouter(database, sched, profileService)
+	router := api.SetupRouter(cfg, database, sched, profileService)
 
 	// Create HTTP server
 	server := &http.Server{

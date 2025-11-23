@@ -2,8 +2,8 @@ package api
 
 import (
 	"net/http"
-	"os"
 
+	"github.com/cheolwanpark/meows/collector/internal/config"
 	"github.com/cheolwanpark/meows/collector/internal/db"
 	"github.com/cheolwanpark/meows/collector/internal/personalization"
 	"github.com/cheolwanpark/meows/collector/internal/scheduler"
@@ -13,7 +13,7 @@ import (
 )
 
 // SetupRouter creates and configures the HTTP router
-func SetupRouter(database *db.DB, sched *scheduler.Scheduler, profService *personalization.UpdateService) http.Handler {
+func SetupRouter(cfg *config.Config, database *db.DB, sched *scheduler.Scheduler, profService *personalization.UpdateService) http.Handler {
 	r := chi.NewRouter()
 
 	// Middleware
@@ -59,8 +59,8 @@ func SetupRouter(database *db.DB, sched *scheduler.Scheduler, profService *perso
 	// Note: Global config endpoints removed - config is now file-based (.config.yaml)
 
 	// Swagger UI (environment-gated for development only)
-	// Access at http://localhost:8080/docs when ENABLE_SWAGGER=true
-	if os.Getenv("ENABLE_SWAGGER") == "true" {
+	// Access at http://localhost:8080/docs when COLLECTOR_ENABLE_SWAGGER=true
+	if cfg.Collector.Server.EnableSwagger {
 		r.Get("/docs/*", httpSwagger.Handler(
 			httpSwagger.URL("doc.json"), // Use the embedded swagger doc
 		))

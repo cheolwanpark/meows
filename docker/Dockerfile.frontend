@@ -70,9 +70,7 @@ COPY --from=go-builder --chown=65532:65532 /build/static/ /app/static/
 EXPOSE 3000
 
 # Environment variables (can be overridden in compose.yaml)
-ENV PORT=3000 \
-    ENV=production \
-    LOG_LEVEL=info
+ENV FRONTEND_PORT=3000
 
 # Run the frontend service
 ENTRYPOINT ["/app/frontend"]

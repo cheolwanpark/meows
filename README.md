@@ -112,7 +112,7 @@ See `.env.example` for detailed documentation of all environment variables.
 cd collector && go run cmd/server/main.go
 
 # Frontend (separate terminal)
-cd front && export CSRF_KEY="key" COLLECTOR_URL="http://localhost:8080" && go run cmd/server/main.go
+cd front && export CSRF_KEY="key" FRONTEND_COLLECTOR_URL="http://localhost:8080" && go run cmd/server/main.go
 ```
 
 **Build from source:**

@@ -27,29 +27,32 @@ func setupTestDB(t *testing.T) *db.DB {
 }
 
 // setupTestConfig creates a minimal test configuration
-func setupTestConfig() *config.CollectorConfig {
-	return &config.CollectorConfig{
-		Server: config.ServerConfig{
-			DBPath:          ":memory:",
-			Port:            8080,
-			MaxCommentDepth: 5,
-			LogLevel:        "info",
-		},
-		Schedule: config.ScheduleConfig{
-			CronExpr: "0 0 * * *",
-		},
-		RateLimits: config.RateLimitsConfig{
-			RedditDelayMs:          1000,
-			SemanticScholarDelayMs: 1000,
-			HackerNewsDelayMs:      500,
-		},
-		Profile: config.ProfileConfig{
-			MilestoneThreshold1: 3,
-			MilestoneThreshold2: 10,
-			MilestoneThreshold3: 20,
-		},
-		Gemini: config.GeminiConfig{
-			APIKey: "", // Empty for tests
+func setupTestConfig() *config.Config {
+	return &config.Config{
+		Collector: config.CollectorConfig{
+			Server: config.ServerConfig{
+				DBPath:          ":memory:",
+				Port:            8080,
+				MaxCommentDepth: 5,
+				LogLevel:        "info",
+				EnableSwagger:   true,
+			},
+			Schedule: config.ScheduleConfig{
+				CronExpr: "0 0 * * *",
+			},
+			RateLimits: config.RateLimitsConfig{
+				RedditDelayMs:          1000,
+				SemanticScholarDelayMs: 1000,
+				HackerNewsDelayMs:      500,
+			},
+			Profile: config.ProfileConfig{
+				MilestoneThreshold1: 3,
+				MilestoneThreshold2: 10,
+				MilestoneThreshold3: 20,
+			},
+			Gemini: config.GeminiConfig{
+				APIKey: "", // Empty for tests
+			},
 		},
 	}
 }
@@ -72,7 +75,7 @@ func setupTestProfileService(t *testing.T, database *db.DB) *personalization.Upd
 func setupTestScheduler(t *testing.T, database *db.DB, profService *personalization.UpdateService) *scheduler.Scheduler {
 	t.Helper()
 	cfg := setupTestConfig()
-	sched, err := scheduler.New(cfg, database, profService, nil)
+	sched, err := scheduler.New(&cfg.Collector, database, profService, nil)
 	if err != nil {
 		t.Fatalf("Failed to create scheduler: %v", err)
 	}
@@ -83,9 +86,10 @@ func TestDeleteSourceByTypeAndExternalID_InvalidType(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
+	cfg := setupTestConfig()
 	profService := setupTestProfileService(t, database)
 	sched := setupTestScheduler(t, database, profService)
-	router := SetupRouter(database, sched, profService)
+	router := SetupRouter(cfg, database, sched, profService)
 
 	req := httptest.NewRequest("DELETE", "/sources/invalid_type/test", nil)
 	w := httptest.NewRecorder()
@@ -101,9 +105,10 @@ func TestDeleteSourceByTypeAndExternalID_EmptyExternalID(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
+	cfg := setupTestConfig()
 	profService := setupTestProfileService(t, database)
 	sched := setupTestScheduler(t, database, profService)
-	router := SetupRouter(database, sched, profService)
+	router := SetupRouter(cfg, database, sched, profService)
 
 	req := httptest.NewRequest("DELETE", "/sources/reddit/", nil)
 	w := httptest.NewRecorder()
@@ -120,9 +125,10 @@ func TestDeleteSourceByTypeAndExternalID_ExternalIDWithSlash(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
+	cfg := setupTestConfig()
 	profService := setupTestProfileService(t, database)
 	sched := setupTestScheduler(t, database, profService)
-	router := SetupRouter(database, sched, profService)
+	router := SetupRouter(cfg, database, sched, profService)
 
 	req := httptest.NewRequest("DELETE", "/sources/reddit/test/with/slash", nil)
 	w := httptest.NewRecorder()
@@ -139,9 +145,10 @@ func TestDeleteSourceByTypeAndExternalID_NotFound(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
+	cfg := setupTestConfig()
 	profService := setupTestProfileService(t, database)
 	sched := setupTestScheduler(t, database, profService)
-	router := SetupRouter(database, sched, profService)
+	router := SetupRouter(cfg, database, sched, profService)
 
 	req := httptest.NewRequest("DELETE", "/sources/reddit/nonexistent?profile_id=test-profile", nil)
 	w := httptest.NewRecorder()
@@ -157,6 +164,7 @@ func TestDeleteSourceByTypeAndExternalID_Success(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
+	cfg := setupTestConfig()
 	profService := setupTestProfileService(t, database)
 	sched := setupTestScheduler(t, database, profService)
 
@@ -178,7 +186,7 @@ func TestDeleteSourceByTypeAndExternalID_Success(t *testing.T) {
 		t.Fatalf("Failed to insert test source: %v", err)
 	}
 
-	router := SetupRouter(database, sched, profService)
+	router := SetupRouter(cfg, database, sched, profService)
 
 	req := httptest.NewRequest("DELETE", "/sources/reddit/golang?profile_id=test-profile-id", nil)
 	w := httptest.NewRecorder()

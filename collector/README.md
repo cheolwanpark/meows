@@ -49,10 +49,10 @@ go build -o bin/collector ./cmd/server
 ./bin/collector
 
 # With custom configuration
-export DB_PATH="./data/meows.db"
-export PORT=3000
-export MAX_COMMENT_DEPTH=3
-export LOG_LEVEL=debug
+export COLLECTOR_DB_PATH="./data/meows.db"
+export COLLECTOR_PORT=3000
+export COLLECTOR_MAX_COMMENT_DEPTH=3
+export COLLECTOR_LOG_LEVEL=debug
 ./bin/collector
 ```
 
@@ -62,11 +62,11 @@ Environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DB_PATH` | `./meows.db` | Path to SQLite database file |
-| `PORT` | `8080` | HTTP server port |
-| `MAX_COMMENT_DEPTH` | `5` | Maximum Reddit comment depth to fetch |
-| `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
-| `ENABLE_SWAGGER` | - | Set to `true` to enable Swagger UI at `/docs` (development only) |
+| `COLLECTOR_DB_PATH` | `./meows.db` | Path to SQLite database file |
+| `COLLECTOR_PORT` | `8080` | HTTP server port |
+| `COLLECTOR_MAX_COMMENT_DEPTH` | `5` | Maximum Reddit comment depth to fetch |
+| `COLLECTOR_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `COLLECTOR_ENABLE_SWAGGER` | - | Set to `true` to enable Swagger UI at `/docs` (development only) |
 
 ## API Documentation
 
@@ -74,11 +74,11 @@ The collector provides **interactive API documentation** via Swagger UI.
 
 ### Accessing Swagger UI
 
-Enable Swagger UI by setting the `ENABLE_SWAGGER` environment variable:
+Enable Swagger UI by setting the `COLLECTOR_ENABLE_SWAGGER` environment variable:
 
 ```bash
 # Start collector with Swagger UI enabled
-ENABLE_SWAGGER=true ./bin/collector
+COLLECTOR_ENABLE_SWAGGER=true ./bin/collector
 ```
 
 Then navigate to **http://localhost:8080/docs** in your browser.

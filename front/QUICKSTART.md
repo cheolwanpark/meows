@@ -79,9 +79,10 @@ Visit: **http://localhost:3000**
 
 ### Port Already in Use
 
-If port 3000 is busy, change it in `.env`:
+If port 3000 is busy, set the environment variable:
 ```bash
-PORT=3001
+export FRONTEND_PORT=3001
+# or add to root .env file: FRONTEND_PORT=3001
 ```
 
 ### Collector Not Reachable

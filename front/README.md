@@ -55,10 +55,10 @@ The server will start on **http://localhost:3000**
 ### First Time Setup
 
 1. **Configure environment:**
-   Edit `.env` file (already created with defaults):
-   - `PORT`: HTTP server port (default: 3000)
-   - `COLLECTOR_URL`: Collector API URL (default: http://localhost:8080)
-   - `CSRF_KEY`: Secret for CSRF tokens
+   Set environment variables (see root `.env.example` for all options):
+   - `FRONTEND_PORT`: HTTP server port (default: 3000)
+   - `FRONTEND_COLLECTOR_URL`: Collector API URL (default: http://collector:8080)
+   - `CSRF_KEY`: Secret for CSRF tokens (required for local development)
 
 2. **Start the collector service:**
    The frontend requires the collector service to be running. See `../collector/` for instructions.
@@ -122,15 +122,13 @@ See [API_CONTRACTS.md](./API_CONTRACTS.md) for detailed API documentation.
 
 ## Environment Variables
 
-See `.env.example` for all available configuration options.
+See root `.env.example` for all available configuration options.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | 3000 | HTTP server port |
-| `COLLECTOR_URL` | http://localhost:8080 | Collector API base URL |
+| `FRONTEND_PORT` | 3000 | HTTP server port |
+| `FRONTEND_COLLECTOR_URL` | http://collector:8080 | Collector API base URL |
 | `CSRF_KEY` | (required) | Secret key for CSRF tokens |
-| `ENV` | development | Environment (development/production) |
-| `LOG_LEVEL` | info | Log level (debug/info/warn/error) |
 
 ## Development Workflow
 
