@@ -82,8 +82,8 @@ func (s *SemanticScholarSource) SourceType() string {
 
 // Validate checks if the configuration is valid
 func (s *SemanticScholarSource) Validate() error {
-	if s.config.Mode != "search" && s.config.Mode != "recommendations" {
-		return fmt.Errorf("mode must be 'search' or 'recommendations', got: %s", s.config.Mode)
+	if err := validateEnum(s.config.Mode, []string{"search", "recommendations"}, "mode"); err != nil {
+		return err
 	}
 
 	if s.config.Mode == "search" {

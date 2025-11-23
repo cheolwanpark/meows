@@ -299,8 +299,13 @@ func (s *Scheduler) runSourcesSequentially(sources []*db.Source, limiter *rate.L
 // Assumes status is already set to "running" by caller
 // This is the primitive operation that all source processing builds upon
 func (s *Scheduler) runSingleSource(src *db.Source, limiter *rate.Limiter) error {
-	// Per-source timeout (5 minutes)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	// Per-source timeout (60 minutes)
+	// Increased to accommodate sources with deep comment fetching (e.g., HackerNews)
+	// Calculation: ~3,000 API calls × 500ms rate limit ≈ 25 min + overhead/retries
+	// TODO: Consider making timeout configurable per source type instead of global
+	// NOTE: This timeout applies to ALL sources, not just HN. Fast sources that hang
+	//       will take 60 min to fail instead of 5 min. Consider source-specific timeouts.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
 	defer cancel()
 
 	// Execute fetch with timeout
@@ -425,6 +430,10 @@ func (s *Scheduler) createRateLimiters() map[string]*rate.Limiter {
 	// Semantic Scholar rate limiter (burst=10)
 	s2ReqPerSec := 1000.0 / float64(s.config.RateLimits.SemanticScholarDelayMs)
 	limiters["semantic_scholar"] = rate.NewLimiter(rate.Limit(s2ReqPerSec), 10)
+
+	// Hacker News rate limiter (burst=10)
+	hnReqPerSec := 1000.0 / float64(s.config.RateLimits.HackerNewsDelayMs)
+	limiters["hackernews"] = rate.NewLimiter(rate.Limit(hnReqPerSec), 10)
 
 	return limiters
 }

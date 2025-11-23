@@ -44,3 +44,31 @@ const (
 	S2MinMinCitations     = 0
 	S2MaxMinCitations     = 100000
 )
+
+// Hacker News source configuration defaults and constraints
+const (
+	// Hacker News story limits
+	HNDefaultLimit = 30
+	HNMinLimit     = 1
+	HNMaxLimit     = 100
+
+	// Hacker News score filtering
+	HNDefaultMinScore = 10
+	HNMinMinScore     = 0
+	HNMaxMinScore     = 10000
+
+	// Hacker News comments filtering
+	HNDefaultMinComments = 5
+	HNMinMinComments     = 0
+	HNMaxMinComments     = 1000
+
+	// Hacker News comment depth
+	HNDefaultMaxCommentDepth = 3
+	HNMinMaxCommentDepth     = 0
+	HNMaxMaxCommentDepth     = 10
+
+	// Hacker News comments per article
+	HNDefaultMaxCommentsPerArticle = 100
+	HNMinMaxCommentsPerArticle     = 1
+	HNMaxMaxCommentsPerArticle     = 500
+)

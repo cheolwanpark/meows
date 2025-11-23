@@ -41,6 +41,7 @@ func setupTestConfig() *config.CollectorConfig {
 		RateLimits: config.RateLimitsConfig{
 			RedditDelayMs:          1000,
 			SemanticScholarDelayMs: 1000,
+			HackerNewsDelayMs:      500,
 		},
 		Profile: config.ProfileConfig{
 			MilestoneThreshold1: 3,

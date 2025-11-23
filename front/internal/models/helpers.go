@@ -85,6 +85,24 @@ func ParseRedditMetadata(metadata json.RawMessage) (score int, comments int) {
 	return data.Score, data.NumComments
 }
 
+// ParseHackerNewsMetadata extracts score and comment count from HackerNews metadata
+func ParseHackerNewsMetadata(metadata json.RawMessage) (score int, comments int) {
+	if len(metadata) == 0 {
+		return 0, 0
+	}
+
+	var data struct {
+		Score       int `json:"score"`
+		Descendants int `json:"descendants"`
+	}
+
+	if err := json.Unmarshal(metadata, &data); err != nil {
+		return 0, 0
+	}
+
+	return data.Score, data.Descendants
+}
+
 // ParseS2Metadata extracts citations and year from Semantic Scholar metadata
 func ParseS2Metadata(metadata json.RawMessage) (citations int, year string) {
 	if len(metadata) == 0 {
@@ -159,6 +177,16 @@ func DetermineCategory(sourceType string, externalID string) string {
 	// For Semantic Scholar, always science
 	if sourceType == "semantic_scholar" {
 		return "science"
+	}
+
+	// For HackerNews, determine category based on story type
+	if sourceType == "hackernews" {
+		// Jobs are categorized as business
+		// All other story types (top, new, best, ask, show) are tech-focused
+		if externalID == "job" {
+			return "business"
+		}
+		return "tech"
 	}
 
 	return "other"

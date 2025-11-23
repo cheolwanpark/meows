@@ -35,7 +35,7 @@ func NewHandler(database *db.DB, sched *scheduler.Scheduler, profService *person
 
 // CreateSource godoc
 // @Summary Create a new crawling source
-// @Description Add a new source for Reddit or Semantic Scholar (schedule is global)
+// @Description Add a new source for Reddit, Semantic Scholar, or Hacker News (schedule is global)
 // @Tags sources
 // @Accept json
 // @Produce json
@@ -54,8 +54,8 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate type
-	if req.Type != "reddit" && req.Type != "semantic_scholar" {
-		respondError(w, http.StatusBadRequest, "type must be 'reddit' or 'semantic_scholar'")
+	if req.Type != "reddit" && req.Type != "semantic_scholar" && req.Type != "hackernews" {
+		respondError(w, http.StatusBadRequest, "type must be 'reddit', 'semantic_scholar', or 'hackernews'")
 		return
 	}
 
@@ -113,7 +113,7 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 // @Tags sources
 // @Accept json
 // @Produce json
-// @Param type query string false "Filter by source type" Enums(reddit, semantic_scholar)
+// @Param type query string false "Filter by source type" Enums(reddit, semantic_scholar, hackernews)
 // @Success 200 {array} SourceResponse
 // @Failure 500 {object} ErrorResponse "Database error"
 // @Router /sources [get]
@@ -403,7 +403,7 @@ func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 // @Tags sources
 // @Accept json
 // @Produce json
-// @Param type path string true "Source type" Enums(reddit, semantic_scholar)
+// @Param type path string true "Source type" Enums(reddit, semantic_scholar, hackernews)
 // @Param external_id path string true "External identifier (URL-encode if contains special characters)"
 // @Success 204 "Source deleted successfully"
 // @Failure 400 {object} ErrorResponse "Invalid type or external_id contains slashes"
@@ -422,8 +422,8 @@ func (h *Handler) DeleteSourceByTypeAndExternalID(w http.ResponseWriter, r *http
 	}
 
 	// Validate type (whitelist)
-	if sourceType != "reddit" && sourceType != "semantic_scholar" {
-		respondError(w, http.StatusBadRequest, "type must be 'reddit' or 'semantic_scholar'")
+	if sourceType != "reddit" && sourceType != "semantic_scholar" && sourceType != "hackernews" {
+		respondError(w, http.StatusBadRequest, "type must be 'reddit', 'semantic_scholar', or 'hackernews'")
 		return
 	}
 
@@ -1545,6 +1545,15 @@ func extractExternalID(sourceType string, config json.RawMessage) (string, error
 			return *s2Config.PaperID, nil
 		}
 		return "", fmt.Errorf("invalid semantic scholar config")
+
+	case "hackernews":
+		var hnConfig db.HackerNewsConfig
+		if err := json.Unmarshal(config, &hnConfig); err != nil {
+			return "", fmt.Errorf("invalid hackernews config: %w", err)
+		}
+		// Use item_type as external_id (e.g., "top", "new", "best")
+		// This allows one source per story type
+		return hnConfig.ItemType, nil
 
 	default:
 		return "", fmt.Errorf("unknown source type: %s", sourceType)

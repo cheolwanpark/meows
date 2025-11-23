@@ -14,7 +14,7 @@ import (
 // @Description Source response with sanitized configuration (credentials omitted)
 type SourceResponse struct {
 	ID            string     `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	Type          string     `json:"type" example:"reddit" enums:"reddit,semantic_scholar"`
+	Type          string     `json:"type" example:"reddit" enums:"reddit,semantic_scholar,hackernews"`
 	ConfigSummary string     `json:"config_summary" example:"subreddit: golang, sort: hot, limit: 100"`
 	ExternalID    string     `json:"external_id" example:"golang"`
 	LastRunAt     *time.Time `json:"last_run_at,omitempty" example:"2024-11-15T12:00:00Z"`
@@ -34,7 +34,7 @@ type ErrorResponse struct {
 // Schedule is now global (configured separately)
 // @Description Request body for creating a new crawling source
 type CreateSourceRequest struct {
-	Type      string          `json:"type" example:"reddit" enums:"reddit,semantic_scholar"`
+	Type      string          `json:"type" example:"reddit" enums:"reddit,semantic_scholar,hackernews"`
 	Config    json.RawMessage `json:"config"`
 	ProfileID string          `json:"profile_id" example:"550e8400-e29b-41d4-a716-446655440000"`
 }
@@ -87,6 +87,18 @@ func extractConfigSummary(sourceType string, config json.RawMessage) string {
 		}
 		return fmt.Sprintf("mode: %s, max_results: %d",
 			s2Config.Mode, s2Config.MaxResults)
+
+	case "hackernews":
+		var hnConfig db.HackerNewsConfig
+		if err := json.Unmarshal(config, &hnConfig); err != nil {
+			return "invalid config"
+		}
+		comments := "no"
+		if hnConfig.IncludeComments {
+			comments = "yes"
+		}
+		return fmt.Sprintf("%s stories (limit: %d, comments: %s)",
+			hnConfig.ItemType, hnConfig.Limit, comments)
 
 	default:
 		return "unknown type"

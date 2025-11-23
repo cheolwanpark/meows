@@ -1,6 +1,9 @@
 package components
 
-import "github.com/cheolwanpark/meows/front/internal/models"
+import (
+	"fmt"
+	"github.com/cheolwanpark/meows/front/internal/models"
+)
 
 templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 	<form
@@ -9,7 +12,12 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 		hx-swap="afterbegin"
 		hx-indicator=".htmx-indicator"
 		class="space-y-5 p-6 border rounded-lg bg-card"
-		x-data="{ sourceType: 'reddit', mode: 'search', sort: 'hot', showAdvanced: false }"
+		x-data={ fmt.Sprintf("{ sourceType: '%s', mode: '%s', sort: '%s', storyType: '%s', includeComments: %s, showAdvanced: false }",
+			getValueOrDefault(values, "source_type", "reddit"),
+			getValueOrDefault(values, "mode", "search"),
+			getValueOrDefault(values, "sort", "hot"),
+			getValueOrDefault(values, "item_type", "top"),
+			getBoolValueOrDefault(values, "include_comments", "false")) }
 	>
 
 		<h2 class="text-xl font-serif font-bold">Add New Source</h2>
@@ -39,6 +47,16 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 						class="w-4 h-4 text-[#ff6b35] border-gray-300 focus:ring-[#ff6b35]"
 					/>
 					<span class="text-sm">Semantic Scholar</span>
+				</label>
+				<label class="flex items-center space-x-2 cursor-pointer">
+					<input
+						type="radio"
+						name="source_type"
+						value="hackernews"
+						x-model="sourceType"
+						class="w-4 h-4 text-[#ff6b35] border-gray-300 focus:ring-[#ff6b35]"
+					/>
+					<span class="text-sm">Hacker News</span>
 				</label>
 			</div>
 		</div>
@@ -164,6 +182,83 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 				class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
 			/>
 			<p class="text-xs text-muted-foreground mt-1">Semantic Scholar paper ID to get recommendations for</p>
+		</div>
+
+		<!-- HackerNews: Story Type -->
+		<div x-show="sourceType === 'hackernews'" x-cloak>
+			<label for="item_type" class="block text-sm font-medium text-foreground mb-1.5">
+				Story Type <span class="text-destructive">*</span>
+			</label>
+			<select
+				id="item_type"
+				name="item_type"
+				x-model="storyType"
+				:disabled="sourceType !== 'hackernews'"
+				class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+			>
+				<option value="top">Top Stories</option>
+				<option value="new">New Stories</option>
+				<option value="best">Best Stories</option>
+				<option value="ask">Ask HN</option>
+				<option value="show">Show HN</option>
+				<option value="job">Jobs</option>
+			</select>
+			<p class="text-xs text-muted-foreground mt-1">Type of stories to fetch from Hacker News</p>
+		</div>
+
+		<!-- HackerNews: Include Comments -->
+		<div x-show="sourceType === 'hackernews'" x-cloak>
+			<label class="flex items-center space-x-2 cursor-pointer">
+				<input
+					type="checkbox"
+					name="include_comments"
+					value="true"
+					x-model="includeComments"
+					:disabled="sourceType !== 'hackernews'"
+					class="w-4 h-4 text-[#ff6b35] border-gray-300 rounded focus:ring-[#ff6b35]"
+				/>
+				<span class="text-sm font-medium">Fetch comments</span>
+			</label>
+			<p class="text-xs text-muted-foreground mt-1 ml-6">Enable to fetch discussion comments along with stories</p>
+
+			<!-- Comment depth and limit (conditional on includeComments) -->
+			<div x-show="includeComments" x-cloak class="mt-3 ml-6 space-y-3 p-3 border-l-2 border-muted">
+				<div>
+					<label for="max_comment_depth" class="block text-sm font-medium text-foreground mb-1.5">
+						Max Comment Depth
+					</label>
+					<input
+						type="number"
+						id="max_comment_depth"
+						name="max_comment_depth"
+						:disabled="sourceType !== 'hackernews' || !includeComments"
+						value={ getValueOrDefault(values, "max_comment_depth", "3") }
+						placeholder="3"
+						min="0"
+						max="10"
+						class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+					/>
+					<p class="text-xs text-muted-foreground mt-1">How deep to fetch nested comments (0-10)</p>
+				</div>
+
+				<div>
+					<label for="max_comments_per_article" class="block text-sm font-medium text-foreground mb-1.5">
+						Max Comments Per Article
+					</label>
+					<input
+						type="number"
+						id="max_comments_per_article"
+						name="max_comments_per_article"
+						:disabled="sourceType !== 'hackernews' || !includeComments"
+						value={ getValueOrDefault(values, "max_comments_per_article", "100") }
+						placeholder="100"
+						min="1"
+						max="500"
+						class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+					/>
+					<p class="text-xs text-muted-foreground mt-1">Maximum total comments to fetch per article</p>
+				</div>
+			</div>
 		</div>
 
 		<!-- Global Schedule Info -->
@@ -303,6 +398,58 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 						/>
 					</div>
 				</div>
+
+				<!-- HackerNews Advanced -->
+				<div x-show="sourceType === 'hackernews'" x-cloak class="space-y-4">
+					<div class="grid grid-cols-2 gap-4">
+						<div>
+							<label for="hn_limit" class="block text-sm font-medium text-foreground mb-1.5">
+								Story Limit
+							</label>
+							<input
+								type="number"
+								id="hn_limit"
+								name="limit"
+								:disabled="sourceType !== 'hackernews'"
+								value={ getValueOrDefault(values, "limit", "30") }
+								placeholder="30"
+								min="1"
+								max="100"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+						<div>
+							<label for="hn_min_score" class="block text-sm font-medium text-foreground mb-1.5">
+								Min Score
+							</label>
+							<input
+								type="number"
+								id="hn_min_score"
+								name="min_score"
+								:disabled="sourceType !== 'hackernews'"
+								value={ getValueOrDefault(values, "min_score", "10") }
+								placeholder="10"
+								min="0"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							/>
+						</div>
+					</div>
+					<div>
+						<label for="hn_min_comments" class="block text-sm font-medium text-foreground mb-1.5">
+							Min Comments
+						</label>
+						<input
+							type="number"
+							id="hn_min_comments"
+							name="min_comments"
+							:disabled="sourceType !== 'hackernews'"
+							value={ getValueOrDefault(values, "min_comments", "5") }
+							placeholder="5"
+							min="0"
+							class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+						/>
+					</div>
+				</div>
 			</div>
 		</div>
 
@@ -326,6 +473,13 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 func getValueOrDefault(values map[string]string, key, defaultVal string) string {
 	if val, ok := values[key]; ok && val != "" {
 		return val
+	}
+	return defaultVal
+}
+
+func getBoolValueOrDefault(values map[string]string, key, defaultVal string) string {
+	if val, ok := values[key]; ok && (val == "true" || val == "on") {
+		return "true"
 	}
 	return defaultVal
 }

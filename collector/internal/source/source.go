@@ -15,7 +15,7 @@ type Source interface {
 	// Fetch retrieves articles since the given time
 	Fetch(ctx context.Context, since time.Time) ([]db.Article, []db.Comment, error)
 
-	// SourceType returns the type of this source ("reddit" or "semantic_scholar")
+	// SourceType returns the type of this source ("reddit", "semantic_scholar", or "hackernews")
 	SourceType() string
 
 	// Validate checks if the source configuration is valid
@@ -34,6 +34,8 @@ func Factory(
 		return NewRedditSource(source, credentials, sharedLimiter, maxCommentDepth)
 	case "semantic_scholar":
 		return NewSemanticScholarSource(source, credentials, sharedLimiter)
+	case "hackernews":
+		return NewHackerNewsSource(source, credentials, sharedLimiter, maxCommentDepth)
 	default:
 		return nil, fmt.Errorf("unknown source type: %s", source.Type)
 	}

@@ -15,7 +15,7 @@ templ configPageContent(sources []models.Source, csrfToken string, errors models
 		<div>
 			<h1 class="text-3xl font-serif font-bold mb-2">Manage Sources</h1>
 			<p class="text-muted-foreground">
-				Add and manage your news sources. Currently only Reddit sources are supported.
+				Add and manage your news sources from Reddit, Semantic Scholar, or Hacker News.
 			</p>
 		</div>
 
@@ -33,6 +33,8 @@ templ configPageContent(sources []models.Source, csrfToken string, errors models
 			<h3 class="text-lg font-serif font-bold mb-3">📚 How it works</h3>
 			<ul class="space-y-2 text-sm text-muted-foreground">
 				<li>• Add Reddit sources by entering a subreddit name (e.g., "programming")</li>
+				<li>• Add Semantic Scholar sources to track academic papers by search or recommendations</li>
+				<li>• Add Hacker News sources to fetch top stories, new posts, Ask HN, Show HN, or jobs</li>
 				<li>• Set a cron schedule to control how often articles are fetched</li>
 				<li>• Articles will appear on the home page once the source is crawled</li>
 				<li>• Toggle sources on/off or delete them using the buttons on each source card</li>

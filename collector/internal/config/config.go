@@ -43,6 +43,7 @@ type ScheduleConfig struct {
 type RateLimitsConfig struct {
 	RedditDelayMs          int
 	SemanticScholarDelayMs int
+	HackerNewsDelayMs      int
 }
 
 // CredentialsConfig represents global credentials shared by all sources
@@ -86,6 +87,7 @@ func LoadConfig() (*Config, error) {
 			RateLimits: RateLimitsConfig{
 				RedditDelayMs:          getEnvAsInt("COLLECTOR_REDDIT_DELAY_MS", 2000),
 				SemanticScholarDelayMs: getEnvAsInt("COLLECTOR_SEMANTIC_SCHOLAR_DELAY_MS", 1000),
+				HackerNewsDelayMs:      getEnvAsInt("COLLECTOR_HACKERNEWS_DELAY_MS", 500),
 			},
 			Credentials: CredentialsConfig{
 				RedditClientID:        getEnv("COLLECTOR_REDDIT_CLIENT_ID", ""),
@@ -206,6 +208,9 @@ func (c *CollectorConfig) Validate() error {
 	}
 	if c.RateLimits.SemanticScholarDelayMs < 0 {
 		return fmt.Errorf("COLLECTOR_SEMANTIC_SCHOLAR_DELAY_MS must be non-negative, got %d", c.RateLimits.SemanticScholarDelayMs)
+	}
+	if c.RateLimits.HackerNewsDelayMs < 0 {
+		return fmt.Errorf("COLLECTOR_HACKERNEWS_DELAY_MS must be non-negative, got %d", c.RateLimits.HackerNewsDelayMs)
 	}
 
 	// Credentials validation (check non-empty for required fields)

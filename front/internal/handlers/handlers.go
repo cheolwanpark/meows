@@ -229,8 +229,8 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 	// Validate source type
 	if sourceType == "" {
 		errors.General = "Source type is required"
-	} else if sourceType != "reddit" && sourceType != "semantic_scholar" {
-		errors.General = "Invalid source type. Must be 'reddit' or 'semantic_scholar'"
+	} else if sourceType != "reddit" && sourceType != "semantic_scholar" && sourceType != "hackernews" {
+		errors.General = "Invalid source type. Must be 'reddit', 'semantic_scholar', or 'hackernews'"
 	}
 
 	// Build config based on source type
@@ -244,6 +244,11 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if sourceType == "semantic_scholar" {
 		config, configErr = buildSemanticScholarConfig(r)
+		if configErr != nil {
+			errors.General = configErr.Error()
+		}
+	} else if sourceType == "hackernews" {
+		config, configErr = buildHackerNewsConfig(r)
 		if configErr != nil {
 			errors.General = configErr.Error()
 		}

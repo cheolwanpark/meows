@@ -46,7 +46,7 @@ templ articleDetailContent(article models.Article, comments []collector.Comment,
 							{ fmt.Sprintf("%d points", article.Score) }
 						</span>
 					}
-					if article.Source == "reddit" && article.Comments > 0 {
+					if (article.Source == "reddit" || article.Source == "hackernews") && article.Comments > 0 {
 						<span>•</span>
 						<span class="flex items-center gap-1">
 							<span>💬</span>

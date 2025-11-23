@@ -93,9 +93,8 @@ func (r *RedditSource) Validate() error {
 	if r.config.Sort == "" {
 		r.config.Sort = "hot"
 	}
-	validSorts := map[string]bool{"hot": true, "new": true, "top": true, "rising": true}
-	if !validSorts[r.config.Sort] {
-		return fmt.Errorf("invalid sort: %s (must be hot, new, top, or rising)", r.config.Sort)
+	if err := validateEnum(r.config.Sort, []string{"hot", "new", "top", "rising"}, "sort"); err != nil {
+		return err
 	}
 	if r.config.Limit <= 0 {
 		r.config.Limit = 100

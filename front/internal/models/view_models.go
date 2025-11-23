@@ -48,6 +48,8 @@ func FromCollectorArticle(a collector.Article, sourceType string) Article {
 		citations, _ := ParseS2Metadata(a.Metadata)
 		article.Score = citations // Use citations as score for papers
 		article.Comments = 0      // Papers don't have comments
+	} else if sourceType == "hackernews" {
+		article.Score, article.Comments = ParseHackerNewsMetadata(a.Metadata)
 	}
 
 	// Default author if empty
@@ -114,6 +116,40 @@ func FromCollectorSource(s collector.Source) Source {
 				source.Name = "S2: " + s.ExternalID
 				source.URL = "https://www.semanticscholar.org/search?q=" + url.QueryEscape(s.ExternalID)
 			}
+		} else {
+			source.Name = s.ConfigSummary
+			source.URL = ""
+		}
+	} else if s.Type == "hackernews" {
+		if s.ExternalID != "" {
+			// ExternalID is the story type (top, new, best, ask, show, job)
+			storyTypeNames := map[string]string{
+				"top":  "Top Stories",
+				"new":  "New Stories",
+				"best": "Best Stories",
+				"ask":  "Ask HN",
+				"show": "Show HN",
+				"job":  "Jobs",
+			}
+			// Map item_type to actual HN URLs (top→news, new→newest, job→jobs)
+			storyTypeURLs := map[string]string{
+				"top":  "news",
+				"new":  "newest",
+				"best": "best",
+				"ask":  "ask",
+				"show": "show",
+				"job":  "jobs",
+			}
+			storyName := storyTypeNames[s.ExternalID]
+			if storyName == "" {
+				storyName = s.ExternalID
+			}
+			storyURL := storyTypeURLs[s.ExternalID]
+			if storyURL == "" {
+				storyURL = s.ExternalID
+			}
+			source.Name = "HN: " + storyName
+			source.URL = "https://news.ycombinator.com/" + storyURL
 		} else {
 			source.Name = s.ConfigSummary
 			source.URL = ""

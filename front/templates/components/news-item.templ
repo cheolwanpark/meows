@@ -42,7 +42,7 @@ templ NewsItem(article models.Article, index int, profileID string) {
 				</span>
 				<span>by { article.Author }</span>
 				<span>{ article.TimeAgo }</span>
-				if article.Source == "reddit" && article.Comments > 0 {
+				if (article.Source == "reddit" || article.Source == "hackernews") && article.Comments > 0 {
 					<span class="flex items-center gap-1">
 						<span class="text-sm">💬</span>
 						{ fmt.Sprintf("%d comments", article.Comments) }

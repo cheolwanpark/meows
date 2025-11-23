@@ -129,6 +129,68 @@ func buildSemanticScholarConfig(r *http.Request) (map[string]interface{}, error)
 	return config, nil
 }
 
+// buildHackerNewsConfig builds and validates a Hacker News source configuration from form data
+func buildHackerNewsConfig(r *http.Request) (map[string]interface{}, error) {
+	config := make(map[string]interface{})
+
+	// Required: item_type (with validation)
+	itemType := r.FormValue("item_type")
+	if itemType == "" {
+		itemType = "top" // Default
+	}
+	validTypes := map[string]bool{
+		"top": true, "new": true, "best": true,
+		"ask": true, "show": true, "job": true,
+	}
+	if !validTypes[itemType] {
+		return nil, errors.New("item_type must be one of: top, new, best, ask, show, job")
+	}
+	config["item_type"] = itemType
+
+	// Required: limit (with default and bounds)
+	limit, err := parseIntWithBounds(r.FormValue("limit"), HNDefaultLimit, HNMinLimit, HNMaxLimit, "limit")
+	if err != nil {
+		return nil, err
+	}
+	config["limit"] = limit
+
+	// Required: min_score (with default and bounds)
+	minScore, err := parseIntWithBounds(r.FormValue("min_score"), HNDefaultMinScore, HNMinMinScore, HNMaxMinScore, "min_score")
+	if err != nil {
+		return nil, err
+	}
+	config["min_score"] = minScore
+
+	// Required: min_comments (with default and bounds)
+	minComments, err := parseIntWithBounds(r.FormValue("min_comments"), HNDefaultMinComments, HNMinMinComments, HNMaxMinComments, "min_comments")
+	if err != nil {
+		return nil, err
+	}
+	config["min_comments"] = minComments
+
+	// Optional: include_comments (checkbox, default: false when unchecked)
+	includeComments := r.FormValue("include_comments")
+	// Checkbox sends "on" when checked, "" when unchecked
+	config["include_comments"] = includeComments == "on" || includeComments == "true"
+
+	// Conditional: comment-related fields only if include_comments is true
+	if config["include_comments"].(bool) {
+		maxCommentDepth, err := parseIntWithBounds(r.FormValue("max_comment_depth"), HNDefaultMaxCommentDepth, HNMinMaxCommentDepth, HNMaxMaxCommentDepth, "max_comment_depth")
+		if err != nil {
+			return nil, err
+		}
+		config["max_comment_depth"] = maxCommentDepth
+
+		maxCommentsPerArticle, err := parseIntWithBounds(r.FormValue("max_comments_per_article"), HNDefaultMaxCommentsPerArticle, HNMinMaxCommentsPerArticle, HNMaxMaxCommentsPerArticle, "max_comments_per_article")
+		if err != nil {
+			return nil, err
+		}
+		config["max_comments_per_article"] = maxCommentsPerArticle
+	}
+
+	return config, nil
+}
+
 // parseIntWithBounds parses a string to int with validation
 func parseIntWithBounds(s string, defaultVal, min, max int, fieldName string) (int, error) {
 	if s == "" {

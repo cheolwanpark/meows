@@ -4,6 +4,7 @@ package models
 const (
 	SourceTypeReddit          = "reddit"
 	SourceTypeSemanticScholar = "semantic_scholar"
+	SourceTypeHackerNews      = "hackernews"
 )
 
 // Reddit sort options

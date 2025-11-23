@@ -10,7 +10,7 @@ import (
 // Global credentials and schedule are stored in .config.yaml file
 type Source struct {
 	ID            string          `json:"id"`
-	Type          string          `json:"type"`        // "reddit" or "semantic_scholar"
+	Type          string          `json:"type"`        // "reddit", "semantic_scholar", or "hackernews"
 	Config        json.RawMessage `json:"config"`      // Per-source settings (subreddit, query, filters, etc.)
 	ExternalID    string          `json:"external_id"` // For dedup (e.g., subreddit name)
 	ProfileID     string          `json:"profile_id"`  // Profile that owns this source
@@ -76,7 +76,7 @@ type Like struct {
 // @Description Scheduled crawl job information
 type ScheduleEntry struct {
 	SourceID   string     `json:"source_id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	SourceType string     `json:"source_type" example:"reddit" enums:"reddit,semantic_scholar"`
+	SourceType string     `json:"source_type" example:"reddit" enums:"reddit,semantic_scholar,hackernews"`
 	NextRun    time.Time  `json:"next_run" example:"2024-11-15T18:00:00Z"`
 	LastRunAt  *time.Time `json:"last_run_at,omitempty" example:"2024-11-15T12:00:00Z"`
 }
@@ -102,6 +102,19 @@ type SemanticScholarConfig struct {
 	Year         *string `json:"year,omitempty"`
 	MaxResults   int     `json:"max_results"`
 	MinCitations int     `json:"min_citations"`
+}
+
+// HackerNewsConfig holds Hacker News per-source configuration
+// No API key required (public API). Rate limits are global (see GlobalConfig and env vars)
+type HackerNewsConfig struct {
+	ItemType              string `json:"item_type"`                // "top", "new", "best", "ask", "show", "job"
+	Limit                 int    `json:"limit"`                    // Max story IDs to fetch (1-100)
+	MinScore              int    `json:"min_score"`                // Filter by minimum points
+	MinComments           int    `json:"min_comments"`             // Filter by minimum descendants
+	IncludeComments       bool   `json:"include_comments"`         // Whether to fetch comments
+	MaxCommentDepth       int    `json:"max_comment_depth"`        // Max nesting level (0-10)
+	MaxCommentsPerArticle int    `json:"max_comments_per_article"` // Max total comments per article (1-500)
+	ForceAPIMode          bool   `json:"force_api_mode"`           // Force API-only mode (emergency rollback, default: false)
 }
 
 // HealthStatus represents the health of the service
