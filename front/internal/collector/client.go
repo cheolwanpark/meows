@@ -38,8 +38,9 @@ type Article struct {
 	WrittenAt  time.Time       `json:"written_at"`
 	Metadata   json.RawMessage `json:"metadata,omitempty"`
 	CreatedAt  time.Time       `json:"created_at"`
-	Liked      bool            `json:"liked,omitempty"`   // Only populated when profile_id provided
-	LikeID     string          `json:"like_id,omitempty"` // Only populated when liked=true
+	Liked      bool            `json:"liked,omitempty"`       // Only populated when profile_id provided
+	LikeID     string          `json:"like_id,omitempty"`     // Only populated when liked=true
+	SourceType string          `json:"source_type,omitempty"` // "reddit", "semantic_scholar", "hackernews"
 }
 
 // Source represents a crawling source from the collector
@@ -109,7 +110,7 @@ type ProfileStatus struct {
 // ArticleListResponse represents paginated articles response from the collector
 type ArticleListResponse struct {
 	Articles []Article `json:"articles"`
-	Total    int       `json:"total"`
+	HasMore  bool      `json:"has_more"`
 	Limit    int       `json:"limit"`
 	Offset   int       `json:"offset"`
 }

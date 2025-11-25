@@ -34,7 +34,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 						name="source_type"
 						value="reddit"
 						x-model="sourceType"
-						class="w-4 h-4 text-[#ff6b35] border-gray-300 focus:ring-[#ff6b35]"
+						class="w-4 h-4 text-brand border-gray-300 focus:ring-brand"
 					/>
 					<span class="text-sm">Reddit</span>
 				</label>
@@ -44,7 +44,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 						name="source_type"
 						value="semantic_scholar"
 						x-model="sourceType"
-						class="w-4 h-4 text-[#ff6b35] border-gray-300 focus:ring-[#ff6b35]"
+						class="w-4 h-4 text-brand border-gray-300 focus:ring-brand"
 					/>
 					<span class="text-sm">Semantic Scholar</span>
 				</label>
@@ -54,7 +54,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 						name="source_type"
 						value="hackernews"
 						x-model="sourceType"
-						class="w-4 h-4 text-[#ff6b35] border-gray-300 focus:ring-[#ff6b35]"
+						class="w-4 h-4 text-brand border-gray-300 focus:ring-brand"
 					/>
 					<span class="text-sm">Hacker News</span>
 				</label>
@@ -75,7 +75,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 				:disabled="sourceType !== 'reddit'"
 				value={ values["subreddit"] }
 				placeholder="e.g., programming"
-				class={ "w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent" }
+				class={ "w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent" }
 			/>
 			<p class="text-xs text-muted-foreground mt-1">Enter the subreddit name without "r/"</p>
 		</div>
@@ -90,7 +90,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 				name="sort"
 				x-model="sort"
 				:disabled="sourceType !== 'reddit'"
-				class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+				class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 			>
 				<option value="hot">Hot</option>
 				<option value="new">New</option>
@@ -108,7 +108,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 				id="time_filter"
 				name="time_filter"
 				:disabled="sourceType !== 'reddit' || sort !== 'top'"
-				class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+				class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 			>
 				<option value="">All Time (default)</option>
 				<option value="hour">Past Hour</option>
@@ -132,7 +132,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 						value="search"
 						x-model="mode"
 						:disabled="sourceType !== 'semantic_scholar'"
-						class="w-4 h-4 text-[#ff6b35] border-gray-300 focus:ring-[#ff6b35]"
+						class="w-4 h-4 text-brand border-gray-300 focus:ring-brand"
 					/>
 					<span class="text-sm">Search Papers</span>
 				</label>
@@ -143,7 +143,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 						value="recommendations"
 						x-model="mode"
 						:disabled="sourceType !== 'semantic_scholar'"
-						class="w-4 h-4 text-[#ff6b35] border-gray-300 focus:ring-[#ff6b35]"
+						class="w-4 h-4 text-brand border-gray-300 focus:ring-brand"
 					/>
 					<span class="text-sm">Paper Recommendations</span>
 				</label>
@@ -162,7 +162,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 				:disabled="sourceType !== 'semantic_scholar' || mode !== 'search'"
 				value={ values["query"] }
 				placeholder="e.g., large language models"
-				class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+				class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 			/>
 			<p class="text-xs text-muted-foreground mt-1">Keywords to search for in academic papers</p>
 		</div>
@@ -179,7 +179,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 				:disabled="sourceType !== 'semantic_scholar' || mode !== 'recommendations'"
 				value={ values["paper_id"] }
 				placeholder="e.g., 649def34f8be52c8b66281af98ae884c09aef38b"
-				class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+				class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 			/>
 			<p class="text-xs text-muted-foreground mt-1">Semantic Scholar paper ID to get recommendations for</p>
 		</div>
@@ -194,7 +194,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 				name="item_type"
 				x-model="storyType"
 				:disabled="sourceType !== 'hackernews'"
-				class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+				class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 			>
 				<option value="top">Top Stories</option>
 				<option value="new">New Stories</option>
@@ -215,7 +215,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 					value="true"
 					x-model="includeComments"
 					:disabled="sourceType !== 'hackernews'"
-					class="w-4 h-4 text-[#ff6b35] border-gray-300 rounded focus:ring-[#ff6b35]"
+					class="w-4 h-4 text-brand border-gray-300 rounded focus:ring-brand"
 				/>
 				<span class="text-sm font-medium">Fetch comments</span>
 			</label>
@@ -236,7 +236,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 						placeholder="3"
 						min="0"
 						max="10"
-						class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+						class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 					/>
 					<p class="text-xs text-muted-foreground mt-1">How deep to fetch nested comments (0-10)</p>
 				</div>
@@ -254,7 +254,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 						placeholder="100"
 						min="1"
 						max="500"
-						class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+						class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 					/>
 					<p class="text-xs text-muted-foreground mt-1">Maximum total comments to fetch per article</p>
 				</div>
@@ -273,7 +273,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 			<button
 				type="button"
 				@click="showAdvanced = !showAdvanced"
-				class="text-sm font-medium text-[#ff6b35] hover:underline flex items-center gap-1"
+				class="text-sm font-medium text-brand hover:underline flex items-center gap-1"
 			>
 				<span x-text="showAdvanced ? '▼' : '▶'"></span>
 				<span>Advanced Options</span>
@@ -296,7 +296,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 								placeholder="25"
 								min="1"
 								max="100"
-								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 							/>
 						</div>
 						<div>
@@ -311,7 +311,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 								value={ getValueOrDefault(values, "min_score", "10") }
 								placeholder="10"
 								min="0"
-								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 							/>
 						</div>
 					</div>
@@ -328,7 +328,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 								value={ getValueOrDefault(values, "min_comments", "5") }
 								placeholder="5"
 								min="0"
-								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 							/>
 						</div>
 						<div>
@@ -342,7 +342,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 								:disabled="sourceType !== 'reddit'"
 								value={ getValueOrDefault(values, "user_agent", "meows/1.0") }
 								placeholder="meows/1.0"
-								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 							/>
 						</div>
 					</div>
@@ -364,7 +364,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 								placeholder="25"
 								min="1"
 								max="100"
-								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 							/>
 						</div>
 						<div>
@@ -379,7 +379,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 								value={ getValueOrDefault(values, "min_citations", "10") }
 								placeholder="10"
 								min="0"
-								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 							/>
 						</div>
 					</div>
@@ -394,7 +394,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 							:disabled="sourceType !== 'semantic_scholar'"
 							value={ values["year"] }
 							placeholder="e.g., 2024 or 2020-2024"
-							class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							class="w-full px-3 py-2 bg-background border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 						/>
 					</div>
 				</div>
@@ -415,7 +415,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 								placeholder="30"
 								min="1"
 								max="100"
-								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 							/>
 						</div>
 						<div>
@@ -430,7 +430,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 								value={ getValueOrDefault(values, "min_score", "10") }
 								placeholder="10"
 								min="0"
-								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+								class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 							/>
 						</div>
 					</div>
@@ -446,7 +446,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 							value={ getValueOrDefault(values, "min_comments", "5") }
 							placeholder="5"
 							min="0"
-							class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent"
+							class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
 						/>
 					</div>
 				</div>
@@ -462,7 +462,7 @@ templ AddSourceForm(errors models.FormErrors, values map[string]string) {
 
 		<button
 			type="submit"
-			class="w-full sm:w-auto px-6 py-2.5 bg-[#ff6b35] text-white font-medium rounded-md hover:bg-[#e55a2b] transition-colors focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:ring-offset-2"
+			class="w-full sm:w-auto px-6 py-2.5 bg-brand text-white font-medium rounded-md hover:bg-brand-600 transition-colors focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2"
 		>
 			<span>Add Source 🐾</span>
 			<span class="htmx-indicator ml-2">⏳</span>

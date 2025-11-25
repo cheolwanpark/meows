@@ -633,8 +633,8 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 
 	curated := curatedStr == "true" && profileID != ""
 
-	// Build base query and count query based on mode
-	var query, countQuery, orderBy string
+	// Build query based on mode
+	var query, orderBy string
 	var baseArgs []interface{} // Args for main query (includes profileID twice for LEFT JOIN + WHERE)
 	tablePrefix := ""          // Column prefix for filters: "a." when JOINing, "" for bare table
 
@@ -646,12 +646,12 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 				SELECT a.id, a.source_id, a.external_id, a.profile_id, a.title, a.author,
 				       a.content, a.url, a.written_at, a.metadata, a.created_at,
 				       CASE WHEN l.id IS NOT NULL THEN 1 ELSE 0 END as liked,
-				       COALESCE(l.id, '') as like_id
+				       COALESCE(l.id, '') as like_id, s.type as source_type
 				FROM curated c
 				JOIN articles a ON c.article_id = a.id
+				JOIN sources s ON a.source_id = s.id
 				LEFT JOIN likes l ON a.id = l.article_id AND l.profile_id = ?
 				WHERE c.profile_id = ?`
-			countQuery = `SELECT COUNT(*) FROM curated c JOIN articles a ON c.article_id = a.id WHERE c.profile_id = ?`
 			orderBy = " ORDER BY c.created_at DESC"
 			baseArgs = append(baseArgs, profileID, profileID)
 		} else {
@@ -660,27 +660,28 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 				SELECT a.id, a.source_id, a.external_id, a.profile_id, a.title, a.author,
 				       a.content, a.url, a.written_at, a.metadata, a.created_at,
 				       CASE WHEN l.id IS NOT NULL THEN 1 ELSE 0 END as liked,
-				       COALESCE(l.id, '') as like_id
+				       COALESCE(l.id, '') as like_id, s.type as source_type
 				FROM articles a
+				JOIN sources s ON a.source_id = s.id
 				LEFT JOIN likes l ON a.id = l.article_id AND l.profile_id = ?
 				WHERE a.profile_id = ?`
-			countQuery = `SELECT COUNT(*) FROM articles a WHERE a.profile_id = ?`
 			orderBy = " ORDER BY a.written_at DESC"
 			baseArgs = append(baseArgs, profileID, profileID)
 		}
 	} else {
 		// No profile: return articles with fake like columns for unified scanning
+		tablePrefix = "a."
 		query = `
-			SELECT id, source_id, external_id, profile_id, title, author,
-			       content, url, written_at, metadata, created_at,
-			       0 as liked, '' as like_id
-			FROM articles
+			SELECT a.id, a.source_id, a.external_id, a.profile_id, a.title, a.author,
+			       a.content, a.url, a.written_at, a.metadata, a.created_at,
+			       0 as liked, '' as like_id, s.type as source_type
+			FROM articles a
+			JOIN sources s ON a.source_id = s.id
 			WHERE 1=1`
-		countQuery = `SELECT COUNT(*) FROM articles WHERE 1=1`
-		orderBy = " ORDER BY written_at DESC"
+		orderBy = " ORDER BY a.written_at DESC"
 	}
 
-	// Build filter conditions (applied to both query and countQuery)
+	// Build filter conditions
 	var filterConditions []string
 	var filterArgs []interface{}
 
@@ -693,30 +694,15 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 		filterArgs = append(filterArgs, *since)
 	}
 
-	// Apply filters to both queries
+	// Apply filters to query
 	for _, cond := range filterConditions {
 		query += " AND " + cond
-		countQuery += " AND " + cond
 	}
 
-	// Execute count query - needs only profileID (if present) + filter args
-	// Note: countQuery doesn't use LEFT JOIN, so it only needs one profileID for WHERE clause
-	var countArgs []interface{}
-	if profileID != "" {
-		countArgs = []interface{}{profileID}
-	}
-	countArgs = append(countArgs, filterArgs...)
-
-	var totalCount int
-	if err := h.db.QueryRow(countQuery, countArgs...).Scan(&totalCount); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to count articles: %v", err))
-		return
-	}
-
-	// Execute main query with ORDER BY, LIMIT, OFFSET
+	// Fetch limit+1 to detect hasMore without COUNT query
 	query += orderBy + " LIMIT ? OFFSET ?"
 	queryArgs := append(baseArgs, filterArgs...)
-	queryArgs = append(queryArgs, limit, offset)
+	queryArgs = append(queryArgs, limit+1, offset)
 
 	rows, err := h.db.Query(query, queryArgs...)
 	if err != nil {
@@ -736,7 +722,7 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 			&article.ID, &article.SourceID, &article.ExternalID, &article.ProfileID,
 			&article.Title, &article.Author, &article.Content, &url,
 			&article.WrittenAt, &metadata, &article.CreatedAt,
-			&liked, &article.LikeID,
+			&liked, &article.LikeID, &article.SourceType,
 		)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to scan article: %v", err))
@@ -759,9 +745,15 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if there are more results (we fetched limit+1)
+	hasMore := len(articles) > limit
+	if hasMore {
+		articles = articles[:limit] // Trim to requested limit
+	}
+
 	response := ArticleListResponse{
 		Articles: articles,
-		Total:    totalCount,
+		HasMore:  hasMore,
 		Limit:    limit,
 		Offset:   offset,
 	}
@@ -816,8 +808,9 @@ func (h *Handler) GetArticle(w http.ResponseWriter, r *http.Request) {
 		err := h.db.QueryRow(`
 			SELECT a.id, a.source_id, a.external_id, a.profile_id, a.title, a.author, a.content, a.url, a.written_at, a.metadata, a.created_at,
 			       CASE WHEN l.id IS NOT NULL THEN 1 ELSE 0 END as liked,
-			       COALESCE(l.id, '') as like_id
+			       COALESCE(l.id, '') as like_id, s.type as source_type
 			FROM articles a
+			JOIN sources s ON a.source_id = s.id
 			LEFT JOIN likes l ON a.id = l.article_id AND l.profile_id = ?
 			WHERE a.id = ?
 		`, profileID, articleID).Scan(
@@ -834,6 +827,7 @@ func (h *Handler) GetArticle(w http.ResponseWriter, r *http.Request) {
 			&article.CreatedAt,
 			&liked,
 			&article.LikeID,
+			&article.SourceType,
 		)
 		if err != nil {
 			if err == sql.ErrNoRows {
@@ -847,9 +841,11 @@ func (h *Handler) GetArticle(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Query without like status
 		err := h.db.QueryRow(`
-			SELECT id, source_id, external_id, profile_id, title, author, content, url, written_at, metadata, created_at
-			FROM articles
-			WHERE id = ?
+			SELECT a.id, a.source_id, a.external_id, a.profile_id, a.title, a.author, a.content, a.url, a.written_at, a.metadata, a.created_at,
+			       0 as liked, '' as like_id, s.type as source_type
+			FROM articles a
+			JOIN sources s ON a.source_id = s.id
+			WHERE a.id = ?
 		`, articleID).Scan(
 			&article.ID,
 			&article.SourceID,
@@ -862,6 +858,9 @@ func (h *Handler) GetArticle(w http.ResponseWriter, r *http.Request) {
 			&article.WrittenAt,
 			&metadata,
 			&article.CreatedAt,
+			&liked,
+			&article.LikeID,
+			&article.SourceType,
 		)
 		if err != nil {
 			if err == sql.ErrNoRows {
@@ -933,19 +932,11 @@ func (h *Handler) GetArticle(w http.ResponseWriter, r *http.Request) {
 	// Return comments in flat order - frontend will use ParentID to build tree
 	comments := flatComments
 
-	// Get source type
-	var sourceType string
-	err = h.db.QueryRow(`SELECT type FROM sources WHERE id = ?`, article.SourceID).Scan(&sourceType)
-	if err != nil {
-		// Default to reddit if source not found (orphaned article)
-		sourceType = "reddit"
-	}
-
 	// Return response
 	response := ArticleDetailResponse{
 		Article:    article,
 		Comments:   comments,
-		SourceType: sourceType,
+		SourceType: article.SourceType,
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {

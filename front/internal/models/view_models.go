@@ -27,7 +27,12 @@ type Article struct {
 }
 
 // FromCollectorArticle converts a collector.Article to a view model Article
-func FromCollectorArticle(a collector.Article, sourceType string) Article {
+func FromCollectorArticle(a collector.Article) Article {
+	sourceType := a.SourceType
+	if sourceType == "" {
+		sourceType = "reddit" // Fallback for legacy data
+	}
+
 	article := Article{
 		ID:        a.ID,
 		SourceID:  a.SourceID,
@@ -39,27 +44,24 @@ func FromCollectorArticle(a collector.Article, sourceType string) Article {
 		WrittenAt: a.WrittenAt,
 		TimeAgo:   RelativeTime(a.WrittenAt),
 		Source:    sourceType,
+		Liked:     a.Liked,
+		LikeID:    a.LikeID,
 	}
 
 	// Parse metadata based on source type
-	if sourceType == "reddit" {
+	switch sourceType {
+	case "reddit":
 		article.Score, article.Comments = ParseRedditMetadata(a.Metadata)
-	} else if sourceType == "semantic_scholar" {
+	case "semantic_scholar":
 		citations, _ := ParseS2Metadata(a.Metadata)
-		article.Score = citations // Use citations as score for papers
-		article.Comments = 0      // Papers don't have comments
-	} else if sourceType == "hackernews" {
+		article.Score = citations
+	case "hackernews":
 		article.Score, article.Comments = ParseHackerNewsMetadata(a.Metadata)
 	}
 
-	// Default author if empty
 	if article.Author == "" {
 		article.Author = "unknown"
 	}
-
-	// Include like status if available
-	article.Liked = a.Liked
-	article.LikeID = a.LikeID
 
 	return article
 }
@@ -175,19 +177,16 @@ func FromCollectorSource(s collector.Source) Source {
 
 // Pagination holds pagination state for templates
 type Pagination struct {
-	CurrentPage int
-	TotalPages  int
-	TotalItems  int
-	PageSize    int
-	HasPrev     bool
-	HasNext     bool
-	IsCurated   bool
+	Page      int
+	HasPrev   bool
+	HasNext   bool
+	IsCurated bool
 }
 
 // PrevPage returns the previous page number
 func (p Pagination) PrevPage() int {
 	if p.HasPrev {
-		return p.CurrentPage - 1
+		return p.Page - 1
 	}
 	return 1
 }
@@ -195,9 +194,9 @@ func (p Pagination) PrevPage() int {
 // NextPage returns the next page number
 func (p Pagination) NextPage() int {
 	if p.HasNext {
-		return p.CurrentPage + 1
+		return p.Page + 1
 	}
-	return p.CurrentPage
+	return p.Page
 }
 
 // FormErrors holds validation errors for forms

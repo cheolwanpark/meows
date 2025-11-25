@@ -1,7 +1,6 @@
 package pages
 
 import (
-	"fmt"
 	"github.com/cheolwanpark/meows/front/templates/layouts"
 	"github.com/cheolwanpark/meows/front/templates/components"
 	"github.com/cheolwanpark/meows/front/internal/models"
@@ -14,12 +13,7 @@ templ HomePage(articles []models.Article, pagination models.Pagination, csrfToke
 templ homePageContent(articles []models.Article, pagination models.Pagination, profileID string) {
 	<div id="article-section" class="space-y-6">
 		<div class="flex items-center justify-between">
-			<div class="flex items-baseline gap-2">
-				<h1 id="article-heading" class="text-3xl font-serif font-bold scroll-mt-16">Latest News</h1>
-				<span id="article-count" class="text-sm text-muted-foreground">
-					{ fmt.Sprintf("%d articles", pagination.TotalItems) }
-				</span>
-			</div>
+			<h1 id="article-heading" class="text-3xl font-serif font-bold scroll-mt-16">Latest News</h1>
 			if profileID != "" {
 				<div id="curated-toggle">
 					@components.CuratedToggle(pagination.IsCurated)
@@ -43,15 +37,12 @@ templ homePageContent(articles []models.Article, pagination models.Pagination, p
 templ ArticleList(articles []models.Article, pagination models.Pagination, profileID string) {
 	@articleListContent(articles, pagination, profileID)
 
-	// Out-of-band swaps for toggle and count (updates elements outside #article-list)
+	// Out-of-band swap for toggle (updates element outside #article-list)
 	if profileID != "" {
 		<div id="curated-toggle" hx-swap-oob="true">
 			@components.CuratedToggle(pagination.IsCurated)
 		</div>
 	}
-	<span id="article-count" hx-swap-oob="true" class="text-sm text-muted-foreground">
-		{ fmt.Sprintf("%d articles", pagination.TotalItems) }
-	</span>
 }
 
 // articleListContent renders just the article list without OOB elements (for initial page load)
@@ -71,7 +62,7 @@ templ articleListContent(articles []models.Article, pagination models.Pagination
 	} else {
 		<div class="space-y-1 border rounded-lg overflow-hidden bg-card">
 			for i, article := range articles {
-				@components.NewsItem(article, (pagination.CurrentPage-1)*pagination.PageSize + i + 1, profileID)
+				@components.NewsItem(article, (pagination.Page-1)*10 + i + 1, profileID)
 			}
 		</div>
 

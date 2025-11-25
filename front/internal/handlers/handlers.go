@@ -30,32 +30,36 @@ func NewHandler(collectorClient *collector.Client, csrf *middleware.CSRF) *Handl
 	}
 }
 
+// setToastHeader sets an HX-Trigger header for toast notifications
+func setToastHeader(w http.ResponseWriter, toastType, message string) {
+	trigger := map[string]interface{}{
+		"showToast": map[string]string{"type": toastType, "text": message},
+	}
+	if data, err := json.Marshal(trigger); err == nil {
+		w.Header().Set("HX-Trigger", string(data))
+	}
+}
+
+// extractFormValues extracts form values for re-populating forms after validation errors
+func extractFormValues(r *http.Request) map[string]string {
+	values := make(map[string]string)
+	for k, v := range r.Form {
+		if len(v) > 0 {
+			values[k] = v[0]
+		}
+	}
+	return values
+}
+
 // respondWithError handles errors by logging technical details and sending user-friendly messages
 // For htmx requests, it sends an HX-Trigger header to show a toast notification
 func respondWithError(w http.ResponseWriter, userMsg string, logMsg string, err error, status int) {
-	// Log technical error with context
 	if err != nil {
 		slog.Error(logMsg, "error", err, "status", status)
 	} else {
 		slog.Warn(logMsg, "status", status)
 	}
-
-	// Set HX-Trigger header for toast notification (properly encoded to prevent injection)
-	trigger := map[string]interface{}{
-		"showToast": map[string]string{
-			"type": "error",
-			"text": userMsg,
-		},
-	}
-	triggerJSON, err := json.Marshal(trigger)
-	if err != nil {
-		// This should never happen with simple map structures, but log just in case
-		slog.Error("Failed to marshal toast trigger", "error", err)
-	} else {
-		w.Header().Set("HX-Trigger", string(triggerJSON))
-	}
-
-	// Write HTTP status and generic error response
+	setToastHeader(w, "error", userMsg)
 	http.Error(w, userMsg, status)
 }
 
@@ -149,50 +153,23 @@ func (h *Handler) parseHomeParams(r *http.Request, profileID string) (page int, 
 
 // fetchArticleListData fetches articles and builds pagination data
 func (h *Handler) fetchArticleListData(ctx context.Context, profileID string, page, offset int, curated bool) ([]models.Article, models.Pagination, error) {
-	// Fetch articles from collector
+	// Fetch articles from collector (includes source_type)
 	response, err := h.collector.GetArticles(ctx, HomePageSize, offset, profileID, curated)
 	if err != nil {
 		return nil, models.Pagination{}, err
 	}
 
-	// Fetch sources to build source type lookup map (avoids N+1 queries)
-	collectorSources, err := h.collector.GetSources(ctx, profileID)
-	if err != nil {
-		slog.Error("Failed to fetch sources", "error", err)
-		// Continue with empty map if sources fetch fails
-		collectorSources = []collector.Source{}
-	}
-
-	// Build sourceID -> sourceType map for O(1) lookups
-	sourceTypeMap := make(map[string]string)
-	for _, s := range collectorSources {
-		sourceTypeMap[s.ID] = s.Type
-	}
-
-	// Convert to view models using source type map
+	// Convert to view models
 	articles := make([]models.Article, 0, len(response.Articles))
 	for _, a := range response.Articles {
-		sourceType := sourceTypeMap[a.SourceID]
-		if sourceType == "" {
-			sourceType = "reddit" // Fallback for legacy/orphaned articles
-		}
-		articles = append(articles, models.FromCollectorArticle(a, sourceType))
-	}
-
-	// Build pagination
-	totalPages := (response.Total + HomePageSize - 1) / HomePageSize
-	if totalPages < 1 {
-		totalPages = 1
+		articles = append(articles, models.FromCollectorArticle(a))
 	}
 
 	pagination := models.Pagination{
-		CurrentPage: page,
-		TotalPages:  totalPages,
-		TotalItems:  response.Total,
-		PageSize:    HomePageSize,
-		HasPrev:     page > 1,
-		HasNext:     page < totalPages,
-		IsCurated:   curated,
+		Page:      page,
+		HasPrev:   page > 1,
+		HasNext:   response.HasMore,
+		IsCurated: curated,
 	}
 
 	return articles, pagination, nil
@@ -249,8 +226,9 @@ func (h *Handler) ArticleDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert article to view model using source type from detail
-	article := models.FromCollectorArticle(detail.Article, detail.SourceType)
+	// Set source type on article (article detail returns it separately)
+	detail.Article.SourceType = detail.SourceType
+	article := models.FromCollectorArticle(detail.Article)
 
 	// Render page
 	component := pages.ArticleDetailPage(article, detail.Comments, csrfToken, profileID)
@@ -341,14 +319,7 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 	// If there are errors, return form with errors
 	if errors.HasErrors() {
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		// Preserve form values for user convenience
-		formValues := make(map[string]string)
-		for key, values := range r.Form {
-			if len(values) > 0 {
-				formValues[key] = values[0]
-			}
-		}
-		component := components.AddSourceForm(errors, formValues)
+		component := components.AddSourceForm(errors, extractFormValues(r))
 		component.Render(r.Context(), w)
 		return
 	}
@@ -371,13 +342,7 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 	if !ok || profileID == "" {
 		errors.General = "Please select a profile first"
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		formValues := make(map[string]string)
-		for key, values := range r.Form {
-			if len(values) > 0 {
-				formValues[key] = values[0]
-			}
-		}
-		component := components.AddSourceForm(errors, formValues)
+		component := components.AddSourceForm(errors, extractFormValues(r))
 		component.Render(r.Context(), w)
 		return
 	}
@@ -392,34 +357,16 @@ func (h *Handler) CreateSource(w http.ResponseWriter, r *http.Request) {
 	source, err := h.collector.CreateSource(ctx, createReq)
 	if err != nil {
 		slog.Error("Failed to create source", "error", err, "type", sourceType)
-		// Provide user-friendly error message instead of exposing internal errors
 		errors.General = "Failed to create source. Please check your configuration and try again."
 		w.WriteHeader(http.StatusInternalServerError)
-		formValues := make(map[string]string)
-		for key, values := range r.Form {
-			if len(values) > 0 {
-				formValues[key] = values[0]
-			}
-		}
-		component := components.AddSourceForm(errors, formValues)
+		component := components.AddSourceForm(errors, extractFormValues(r))
 		component.Render(r.Context(), w)
 		return
 	}
 
 	// Success: return source card for htmx to insert
 	viewSource := models.FromCollectorSource(*source)
-
-	// Trigger success toast
-	trigger := map[string]interface{}{
-		"showToast": map[string]string{
-			"type": "success",
-			"text": "Source added successfully",
-		},
-	}
-	if triggerJSON, err := json.Marshal(trigger); err == nil {
-		w.Header().Set("HX-Trigger", string(triggerJSON))
-	}
-
+	setToastHeader(w, "success", "Source added successfully")
 	component := components.SourceCard(viewSource)
 	component.Render(r.Context(), w)
 }
@@ -460,17 +407,7 @@ func (h *Handler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 	for i, s := range sources {
 		viewSources[i] = models.FromCollectorSource(s)
 	}
-
-	// Trigger success toast
-	trigger := map[string]interface{}{
-		"showToast": map[string]string{
-			"type": "success",
-			"text": "Source removed successfully",
-		},
-	}
-	if triggerJSON, err := json.Marshal(trigger); err == nil {
-		w.Header().Set("HX-Trigger", string(triggerJSON))
-	}
+	setToastHeader(w, "success", "Source removed successfully")
 
 	// Return updated source list HTML
 	component := components.SourceList(viewSources)
@@ -497,16 +434,7 @@ func (h *Handler) TriggerSource(w http.ResponseWriter, r *http.Request) {
 		if statusErr, ok := err.(*collector.StatusError); ok {
 			switch statusErr.StatusCode {
 			case http.StatusConflict:
-				// 409: Source is already running
-				trigger := map[string]interface{}{
-					"showToast": map[string]string{
-						"type": "info",
-						"text": "Source is already running",
-					},
-				}
-				if triggerJSON, err := json.Marshal(trigger); err == nil {
-					w.Header().Set("HX-Trigger", string(triggerJSON))
-				}
+				setToastHeader(w, "info", "Source is already running")
 				w.WriteHeader(http.StatusOK)
 				return
 			case http.StatusNotFound:
@@ -520,17 +448,7 @@ func (h *Handler) TriggerSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Success toast
-	trigger := map[string]interface{}{
-		"showToast": map[string]string{
-			"type": "success",
-			"text": "Crawl started! Check back in a few moments.",
-		},
-	}
-	if triggerJSON, err := json.Marshal(trigger); err == nil {
-		w.Header().Set("HX-Trigger", string(triggerJSON))
-	}
-
+	setToastHeader(w, "success", "Crawl started! Check back in a few moments.")
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -678,7 +596,7 @@ func (h *Handler) UpdateProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Return "updating" to trigger frontend polling if description changed
 	// The collector automatically triggers character regeneration when description changes
-	w.Header().Set("HX-Trigger", `{"showToast": "Profile updated!"}`)
+	setToastHeader(w, "success", "Profile updated!")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("updating"))
 }
@@ -725,19 +643,7 @@ func (h *Handler) LikeArticle(w http.ResponseWriter, r *http.Request) {
 	like, err := h.collector.LikeArticle(ctx, articleID, profileID)
 	if err != nil {
 		slog.Error("Failed to like article", "article_id", articleID, "profile_id", profileID, "error", err)
-
-		// Set toast error trigger
-		trigger := map[string]interface{}{
-			"showToast": map[string]string{
-				"type": "error",
-				"text": "Failed to like article",
-			},
-		}
-		if triggerJSON, err := json.Marshal(trigger); err == nil {
-			w.Header().Set("HX-Trigger", string(triggerJSON))
-		}
-
-		// Return the unliked button (rollback)
+		setToastHeader(w, "error", "Failed to like article")
 		component := components.LikeButton(articleID, false, "", profileID)
 		component.Render(r.Context(), w)
 		return
@@ -774,19 +680,7 @@ func (h *Handler) UnlikeArticle(w http.ResponseWriter, r *http.Request) {
 	err := h.collector.UnlikeArticle(ctx, likeID)
 	if err != nil {
 		slog.Error("Failed to unlike article", "like_id", likeID, "error", err)
-
-		// Set toast error trigger
-		trigger := map[string]interface{}{
-			"showToast": map[string]string{
-				"type": "error",
-				"text": "Failed to unlike article",
-			},
-		}
-		if triggerJSON, err := json.Marshal(trigger); err == nil {
-			w.Header().Set("HX-Trigger", string(triggerJSON))
-		}
-
-		// Return the liked button (rollback)
+		setToastHeader(w, "error", "Failed to unlike article")
 		component := components.LikeButton(articleID, true, likeID, profileID)
 		component.Render(r.Context(), w)
 		return

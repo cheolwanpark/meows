@@ -54,7 +54,7 @@ templ articleDetailContent(article models.Article, comments []collector.Comment,
 						</span>
 					}
 					<span>•</span>
-					<span class="text-[#ff6b35] font-medium">
+					<span class="text-brand font-medium">
 						{ article.Source }
 					</span>
 					if profileID != "" {
@@ -80,7 +80,7 @@ templ articleDetailContent(article models.Article, comments []collector.Comment,
 						href={ templ.SafeURL(article.URL) }
 						target="_blank"
 						rel="noopener noreferrer"
-						class="inline-flex items-center gap-2 px-6 py-3 bg-[#ff6b35] hover:bg-[#ff5722] text-white font-medium rounded-lg transition-colors"
+						class="inline-flex items-center gap-2 px-6 py-3 bg-brand hover:bg-brand-600 text-white font-medium rounded-lg transition-colors"
 					>
 						<span>View on { article.Source }</span>
 						<span>↗</span>

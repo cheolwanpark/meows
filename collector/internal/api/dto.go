@@ -129,15 +129,16 @@ type CreateLikeRequest struct {
 // @Description Article with like status for a specific profile
 type ArticleWithLikeStatus struct {
 	db.Article
-	Liked  bool   `json:"liked" example:"true"`
-	LikeID string `json:"like_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Liked      bool   `json:"liked" example:"true"`
+	LikeID     string `json:"like_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	SourceType string `json:"source_type" example:"reddit"`
 }
 
 // ArticleListResponse represents paginated articles response
-// @Description Paginated list of articles with total count
+// @Description Paginated list of articles with has-more indicator
 type ArticleListResponse struct {
 	Articles []ArticleWithLikeStatus `json:"articles"`
-	Total    int                     `json:"total"`
+	HasMore  bool                    `json:"has_more"`
 	Limit    int                     `json:"limit"`
 	Offset   int                     `json:"offset"`
 }

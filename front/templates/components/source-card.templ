@@ -33,7 +33,7 @@ templ SourceCard(source models.Source) {
 				}
 			</div>
 			<span class={ templ.KV("text-xs px-2 py-1 rounded-full", true),
-				templ.KV("bg-[#ff6b35]/10 text-[#ff6b35]", source.IsActive),
+				templ.KV("bg-brand/10 text-brand", source.IsActive),
 				templ.KV("bg-muted text-muted-foreground", !source.IsActive) }>
 				if source.IsActive {
 					Active

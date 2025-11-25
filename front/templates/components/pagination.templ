@@ -5,70 +5,40 @@ import (
 	"github.com/cheolwanpark/meows/front/internal/models"
 )
 
-// Pagination renders pagination controls for the article list
+// Pagination renders prev/next pagination controls
 templ Pagination(p models.Pagination) {
-	if p.TotalPages > 1 {
-		<nav class="flex items-center justify-center gap-2 mt-6 py-4" aria-label="Pagination">
-			<!-- Previous button -->
+	if p.HasPrev || p.HasNext {
+		<nav class="flex items-center justify-between mt-4 py-2" aria-label="Pagination">
 			if p.HasPrev {
 				<button
 					type="button"
-					hx-get={ buildPageURL(p.PrevPage(), p.IsCurated) }
+					hx-get={ fmt.Sprintf("/articles-partial?page=%d&curated=%t", p.PrevPage(), p.IsCurated) }
 					hx-target="#article-list"
 					hx-swap="innerHTML"
-					hx-push-url={ buildPushURL(p.PrevPage(), p.IsCurated) }
+					hx-push-url={ fmt.Sprintf("/?page=%d&curated=%t", p.PrevPage(), p.IsCurated) }
 					hx-indicator="#loading-indicator"
 					class="px-3 py-1.5 text-sm rounded-md border border-border bg-card hover:bg-muted transition-colors"
 				>
-					Previous
+					← Previous
 				</button>
 			} else {
-				<button
-					type="button"
-					disabled
-					class="px-3 py-1.5 text-sm rounded-md border border-border bg-muted text-muted-foreground cursor-not-allowed"
-				>
-					Previous
-				</button>
+				<div></div>
 			}
-
-			<!-- Page indicator -->
-			<span class="px-3 py-1.5 text-sm text-muted-foreground">
-				Page { fmt.Sprintf("%d", p.CurrentPage) } of { fmt.Sprintf("%d", p.TotalPages) }
-			</span>
-
-			<!-- Next button -->
 			if p.HasNext {
 				<button
 					type="button"
-					hx-get={ buildPageURL(p.NextPage(), p.IsCurated) }
+					hx-get={ fmt.Sprintf("/articles-partial?page=%d&curated=%t", p.NextPage(), p.IsCurated) }
 					hx-target="#article-list"
 					hx-swap="innerHTML"
-					hx-push-url={ buildPushURL(p.NextPage(), p.IsCurated) }
+					hx-push-url={ fmt.Sprintf("/?page=%d&curated=%t", p.NextPage(), p.IsCurated) }
 					hx-indicator="#loading-indicator"
 					class="px-3 py-1.5 text-sm rounded-md border border-border bg-card hover:bg-muted transition-colors"
 				>
-					Next
+					Next →
 				</button>
 			} else {
-				<button
-					type="button"
-					disabled
-					class="px-3 py-1.5 text-sm rounded-md border border-border bg-muted text-muted-foreground cursor-not-allowed"
-				>
-					Next
-				</button>
+				<div></div>
 			}
 		</nav>
 	}
-}
-
-// buildPageURL constructs the URL for HTMX get request
-func buildPageURL(page int, curated bool) string {
-	return fmt.Sprintf("/articles-partial?page=%d&curated=%t", page, curated)
-}
-
-// buildPushURL constructs the URL for browser history
-func buildPushURL(page int, curated bool) string {
-	return fmt.Sprintf("/?page=%d&curated=%t", page, curated)
 }

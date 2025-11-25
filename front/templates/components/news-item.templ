@@ -18,7 +18,7 @@ templ NewsItem(article models.Article, index int, profileID string) {
 			<div class="flex flex-wrap items-baseline gap-2 mb-1">
 				<a
 					href={ templ.SafeURL("/articles/" + article.ID) }
-					class="text-foreground hover:text-[#ff6b35] transition-colors font-medium text-base leading-snug"
+					class="text-foreground hover:text-brand transition-colors font-medium text-base leading-snug"
 				>
 					{ article.Title }
 				</a>
@@ -50,7 +50,7 @@ templ NewsItem(article models.Article, index int, profileID string) {
 				}
 				<!-- Like Button -->
 				@LikeButton(article.ID, article.Liked, article.LikeID, profileID)
-				<span class="text-[#ff6b35] font-medium">
+				<span class="text-brand font-medium">
 					{ article.Source }
 				</span>
 			</div>
