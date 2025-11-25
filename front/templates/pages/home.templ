@@ -7,30 +7,74 @@ import (
 	"github.com/cheolwanpark/meows/front/internal/models"
 )
 
-templ HomePage(articles []models.Article, csrfToken, profileID string) {
-	@layouts.Base("Home", csrfToken, homePageContent(articles, csrfToken, profileID))
+templ HomePage(articles []models.Article, pagination models.Pagination, csrfToken, profileID string) {
+	@layouts.Base("Home", csrfToken, homePageContent(articles, pagination, profileID))
 }
 
-templ homePageContent(articles []models.Article, csrfToken, profileID string) {
-	<div class="space-y-6">
+templ homePageContent(articles []models.Article, pagination models.Pagination, profileID string) {
+	<div id="article-section" class="space-y-6">
 		<div class="flex items-center justify-between">
-			<h1 class="text-3xl font-serif font-bold">Latest News</h1>
-			<span class="text-sm text-muted-foreground">
-				{ fmt.Sprintf("%d articles", len(articles)) }
-			</span>
+			<div class="flex items-baseline gap-2">
+				<h1 id="article-heading" class="text-3xl font-serif font-bold scroll-mt-16">Latest News</h1>
+				<span id="article-count" class="text-sm text-muted-foreground">
+					{ fmt.Sprintf("%d articles", pagination.TotalItems) }
+				</span>
+			</div>
+			if profileID != "" {
+				<div id="curated-toggle">
+					@components.CuratedToggle(pagination.IsCurated)
+				</div>
+			}
 		</div>
 
-		if len(articles) == 0 {
+		<!-- Loading indicator -->
+		<div id="loading-indicator" class="htmx-indicator flex justify-center py-4">
+			<span class="text-muted-foreground">Loading...</span>
+		</div>
+
+		<!-- Article list container for HTMX swapping -->
+		<div id="article-list">
+			@articleListContent(articles, pagination, profileID)
+		</div>
+	</div>
+}
+
+// ArticleList is the partial template for HTMX swapping (includes OOB swaps)
+templ ArticleList(articles []models.Article, pagination models.Pagination, profileID string) {
+	@articleListContent(articles, pagination, profileID)
+
+	// Out-of-band swaps for toggle and count (updates elements outside #article-list)
+	if profileID != "" {
+		<div id="curated-toggle" hx-swap-oob="true">
+			@components.CuratedToggle(pagination.IsCurated)
+		</div>
+	}
+	<span id="article-count" hx-swap-oob="true" class="text-sm text-muted-foreground">
+		{ fmt.Sprintf("%d articles", pagination.TotalItems) }
+	</span>
+}
+
+// articleListContent renders just the article list without OOB elements (for initial page load)
+templ articleListContent(articles []models.Article, pagination models.Pagination, profileID string) {
+	if len(articles) == 0 {
+		if pagination.IsCurated {
+			@components.EmptyState(
+				"No curated articles yet",
+				"Your personalized feed is empty. Switch to 'All' to see all articles, or wait for the AI to curate some for you!",
+			)
+		} else {
 			@components.EmptyState(
 				"No articles yet",
 				"Articles from your configured sources will appear here. Add sources in the Sources page to get started!",
 			)
-		} else {
-			<div class="space-y-1 border rounded-lg overflow-hidden bg-card">
-				for i, article := range articles {
-					@components.NewsItem(article, i+1, profileID)
-				}
-			</div>
 		}
-	</div>
+	} else {
+		<div class="space-y-1 border rounded-lg overflow-hidden bg-card">
+			for i, article := range articles {
+				@components.NewsItem(article, (pagination.CurrentPage-1)*pagination.PageSize + i + 1, profileID)
+			}
+		</div>
+
+		@components.Pagination(pagination)
+	}
 }

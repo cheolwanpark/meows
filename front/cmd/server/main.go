@@ -62,6 +62,7 @@ func main() {
 
 	// Routes
 	r.Get("/", h.Home)
+	r.Get("/articles-partial", h.ArticleListPartial) // HTMX partial for article list
 	r.Get("/articles/{id}", h.ArticleDetail)
 	r.Get("/sources", h.SourcesPage)
 

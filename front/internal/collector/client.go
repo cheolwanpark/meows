@@ -106,6 +106,14 @@ type ProfileStatus struct {
 	CharacterError  string `json:"character_error,omitempty"`
 }
 
+// ArticleListResponse represents paginated articles response from the collector
+type ArticleListResponse struct {
+	Articles []Article `json:"articles"`
+	Total    int       `json:"total"`
+	Limit    int       `json:"limit"`
+	Offset   int       `json:"offset"`
+}
+
 // ErrorResponse represents an error response from the collector
 type ErrorResponse struct {
 	Error string `json:"error"`
@@ -121,12 +129,16 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("collector error (status %d): %s", e.StatusCode, e.Message)
 }
 
-// GetArticles fetches articles from the collector
+// GetArticles fetches articles from the collector with pagination
 // profileID is optional - if provided, articles will include like status for that profile
-func (c *Client) GetArticles(ctx context.Context, limit, offset int, profileID string) ([]Article, error) {
+// curated filters to curated articles only (requires profileID)
+func (c *Client) GetArticles(ctx context.Context, limit, offset int, profileID string, curated bool) (*ArticleListResponse, error) {
 	url := fmt.Sprintf("%s/articles?limit=%d&offset=%d", c.baseURL, limit, offset)
 	if profileID != "" {
 		url += fmt.Sprintf("&profile_id=%s", profileID)
+		if curated {
+			url += "&curated=true"
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -144,12 +156,12 @@ func (c *Client) GetArticles(ctx context.Context, limit, offset int, profileID s
 		return nil, c.parseError(resp)
 	}
 
-	var articles []Article
-	if err := json.NewDecoder(resp.Body).Decode(&articles); err != nil {
+	var response ArticleListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	return articles, nil
+	return &response, nil
 }
 
 // GetSources fetches sources from the collector

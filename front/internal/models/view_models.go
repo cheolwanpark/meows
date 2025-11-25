@@ -173,6 +173,33 @@ func FromCollectorSource(s collector.Source) Source {
 	return source
 }
 
+// Pagination holds pagination state for templates
+type Pagination struct {
+	CurrentPage int
+	TotalPages  int
+	TotalItems  int
+	PageSize    int
+	HasPrev     bool
+	HasNext     bool
+	IsCurated   bool
+}
+
+// PrevPage returns the previous page number
+func (p Pagination) PrevPage() int {
+	if p.HasPrev {
+		return p.CurrentPage - 1
+	}
+	return 1
+}
+
+// NextPage returns the next page number
+func (p Pagination) NextPage() int {
+	if p.HasNext {
+		return p.CurrentPage + 1
+	}
+	return p.CurrentPage
+}
+
 // FormErrors holds validation errors for forms
 type FormErrors struct {
 	Name     string

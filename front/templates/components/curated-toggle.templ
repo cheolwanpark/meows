@@ -1,0 +1,41 @@
+package components
+
+// CuratedToggle renders a cute pill-style toggle for curated/all articles
+templ CuratedToggle(curated bool) {
+	<div class="inline-flex rounded-full border border-border bg-muted p-0.5 text-sm">
+		<button
+			type="button"
+			hx-get="/articles-partial?curated=true&page=1"
+			hx-target="#article-list"
+			hx-swap="innerHTML"
+			hx-push-url="/?curated=true"
+			hx-indicator="#loading-indicator"
+			if curated {
+				class="px-3 py-1 rounded-full bg-[#ff6b35] text-white font-medium transition-all"
+				aria-pressed="true"
+			} else {
+				class="px-3 py-1 rounded-full text-muted-foreground hover:text-foreground transition-all"
+				aria-pressed="false"
+			}
+		>
+			For You
+		</button>
+		<button
+			type="button"
+			hx-get="/articles-partial?curated=false&page=1"
+			hx-target="#article-list"
+			hx-swap="innerHTML"
+			hx-push-url="/?curated=false"
+			hx-indicator="#loading-indicator"
+			if !curated {
+				class="px-3 py-1 rounded-full bg-[#ff6b35] text-white font-medium transition-all"
+				aria-pressed="true"
+			} else {
+				class="px-3 py-1 rounded-full text-muted-foreground hover:text-foreground transition-all"
+				aria-pressed="false"
+			}
+		>
+			All
+		</button>
+	</div>
+}

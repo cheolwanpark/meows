@@ -116,6 +116,18 @@ templ Base(title string, csrfToken string, content templ.Component) {
 						window.toast.error('Request timed out. Please try again.');
 					});
 
+					// Scroll to article heading after pagination swaps
+					document.body.addEventListener('htmx:afterSwap', function(evt) {
+						var target = evt.detail.target;
+						if (!target || target.id !== 'article-list') return;
+						requestAnimationFrame(function() {
+							var heading = document.getElementById('article-heading');
+							if (heading) {
+								heading.scrollIntoView({behavior: 'smooth', block: 'start'});
+							}
+						});
+					});
+
 					// Listen for server-triggered toast events (from HX-Trigger headers)
 					document.body.addEventListener('showToast', function(evt) {
 						if (!window.toast) return;

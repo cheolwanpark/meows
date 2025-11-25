@@ -594,7 +594,8 @@ func (h *Handler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 // @Param limit query int false "Max results per page (default: 50, max: 500)" minimum(1) maximum(500)
 // @Param offset query int false "Pagination offset (default: 0)" minimum(0)
 // @Param since query string false "Filter articles written after this timestamp (RFC3339 format)" example(2024-11-15T00:00:00Z)
-// @Success 200 {array} db.Article
+// @Param curated query bool false "Filter to curated articles only (requires profile_id)" example(false)
+// @Success 200 {object} ArticleListResponse
 // @Failure 500 {object} ErrorResponse "Database error"
 // @Router /articles [get]
 func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
@@ -603,6 +604,7 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 	limitStr := r.URL.Query().Get("limit")
 	offsetStr := r.URL.Query().Get("offset")
 	sinceStr := r.URL.Query().Get("since")
+	curatedStr := r.URL.Query().Get("curated")
 
 	// Parse parameters
 	limit := 50
@@ -629,153 +631,142 @@ func (h *Handler) ListArticles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build query - include like information if profile_id provided
-	var query string
-	args := []interface{}{}
+	curated := curatedStr == "true" && profileID != ""
+
+	// Build base query and count query based on mode
+	var query, countQuery, orderBy string
+	var baseArgs []interface{} // Args for main query (includes profileID twice for LEFT JOIN + WHERE)
+	tablePrefix := ""          // Column prefix for filters: "a." when JOINing, "" for bare table
 
 	if profileID != "" {
-		// Include like status and scope to profile
-		query = `
-			SELECT a.id, a.source_id, a.external_id, a.profile_id, a.title, a.author,
-			       a.content, a.url, a.written_at, a.metadata, a.created_at,
-			       CASE WHEN l.id IS NOT NULL THEN 1 ELSE 0 END as liked,
-			       COALESCE(l.id, '') as like_id
-			FROM articles a
-			LEFT JOIN likes l ON a.id = l.article_id AND l.profile_id = ?
-			WHERE a.profile_id = ?
-		`
-		args = append(args, profileID, profileID)
+		tablePrefix = "a."
+		if curated {
+			// Curated articles: join with curated table
+			query = `
+				SELECT a.id, a.source_id, a.external_id, a.profile_id, a.title, a.author,
+				       a.content, a.url, a.written_at, a.metadata, a.created_at,
+				       CASE WHEN l.id IS NOT NULL THEN 1 ELSE 0 END as liked,
+				       COALESCE(l.id, '') as like_id
+				FROM curated c
+				JOIN articles a ON c.article_id = a.id
+				LEFT JOIN likes l ON a.id = l.article_id AND l.profile_id = ?
+				WHERE c.profile_id = ?`
+			countQuery = `SELECT COUNT(*) FROM curated c JOIN articles a ON c.article_id = a.id WHERE c.profile_id = ?`
+			orderBy = " ORDER BY c.created_at DESC"
+			baseArgs = append(baseArgs, profileID, profileID)
+		} else {
+			// All articles with like status
+			query = `
+				SELECT a.id, a.source_id, a.external_id, a.profile_id, a.title, a.author,
+				       a.content, a.url, a.written_at, a.metadata, a.created_at,
+				       CASE WHEN l.id IS NOT NULL THEN 1 ELSE 0 END as liked,
+				       COALESCE(l.id, '') as like_id
+				FROM articles a
+				LEFT JOIN likes l ON a.id = l.article_id AND l.profile_id = ?
+				WHERE a.profile_id = ?`
+			countQuery = `SELECT COUNT(*) FROM articles a WHERE a.profile_id = ?`
+			orderBy = " ORDER BY a.written_at DESC"
+			baseArgs = append(baseArgs, profileID, profileID)
+		}
 	} else {
-		// No like status, no profile filter
+		// No profile: return articles with fake like columns for unified scanning
 		query = `
-			SELECT id, source_id, external_id, profile_id, title, author, content, url, written_at, metadata, created_at
+			SELECT id, source_id, external_id, profile_id, title, author,
+			       content, url, written_at, metadata, created_at,
+			       0 as liked, '' as like_id
 			FROM articles
-			WHERE 1=1
-		`
+			WHERE 1=1`
+		countQuery = `SELECT COUNT(*) FROM articles WHERE 1=1`
+		orderBy = " ORDER BY written_at DESC"
 	}
+
+	// Build filter conditions (applied to both query and countQuery)
+	var filterConditions []string
+	var filterArgs []interface{}
 
 	if sourceID != "" {
-		if profileID != "" {
-			query += " AND a.source_id = ?"
-		} else {
-			query += " AND source_id = ?"
-		}
-		args = append(args, sourceID)
+		filterConditions = append(filterConditions, tablePrefix+"source_id = ?")
+		filterArgs = append(filterArgs, sourceID)
 	}
-
 	if since != nil {
-		if profileID != "" {
-			query += " AND a.written_at >= ?"
-		} else {
-			query += " AND written_at >= ?"
-		}
-		args = append(args, *since)
+		filterConditions = append(filterConditions, tablePrefix+"written_at >= ?")
+		filterArgs = append(filterArgs, *since)
 	}
 
+	// Apply filters to both queries
+	for _, cond := range filterConditions {
+		query += " AND " + cond
+		countQuery += " AND " + cond
+	}
+
+	// Execute count query - needs only profileID (if present) + filter args
+	// Note: countQuery doesn't use LEFT JOIN, so it only needs one profileID for WHERE clause
+	var countArgs []interface{}
 	if profileID != "" {
-		query += " ORDER BY a.written_at DESC LIMIT ? OFFSET ?"
-	} else {
-		query += " ORDER BY written_at DESC LIMIT ? OFFSET ?"
+		countArgs = []interface{}{profileID}
 	}
-	args = append(args, limit, offset)
+	countArgs = append(countArgs, filterArgs...)
 
-	rows, err := h.db.Query(query, args...)
+	var totalCount int
+	if err := h.db.QueryRow(countQuery, countArgs...).Scan(&totalCount); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to count articles: %v", err))
+		return
+	}
+
+	// Execute main query with ORDER BY, LIMIT, OFFSET
+	query += orderBy + " LIMIT ? OFFSET ?"
+	queryArgs := append(baseArgs, filterArgs...)
+	queryArgs = append(queryArgs, limit, offset)
+
+	rows, err := h.db.Query(query, queryArgs...)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query articles: %v", err))
 		return
 	}
 	defer rows.Close()
 
-	if profileID != "" {
-		// Return articles with like status
-		articlesWithLikes := []ArticleWithLikeStatus{}
-		for rows.Next() {
-			var article ArticleWithLikeStatus
-			var url, metadata sql.NullString
-			var liked int
+	// Unified scanning loop - all queries now return same columns
+	articles := []ArticleWithLikeStatus{}
+	for rows.Next() {
+		var article ArticleWithLikeStatus
+		var url, metadata sql.NullString
+		var liked int
 
-			err := rows.Scan(
-				&article.ID,
-				&article.SourceID,
-				&article.ExternalID,
-				&article.ProfileID,
-				&article.Title,
-				&article.Author,
-				&article.Content,
-				&url,
-				&article.WrittenAt,
-				&metadata,
-				&article.CreatedAt,
-				&liked,
-				&article.LikeID,
-			)
-			if err != nil {
-				respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to scan article: %v", err))
-				return
-			}
-
-			if url.Valid {
-				article.URL = url.String
-			}
-			if metadata.Valid {
-				article.Metadata = json.RawMessage(metadata.String)
-			}
-			article.Liked = (liked == 1)
-
-			articlesWithLikes = append(articlesWithLikes, article)
-		}
-
-		if err := rows.Err(); err != nil {
-			respondError(w, http.StatusInternalServerError, fmt.Sprintf("error iterating articles: %v", err))
+		err := rows.Scan(
+			&article.ID, &article.SourceID, &article.ExternalID, &article.ProfileID,
+			&article.Title, &article.Author, &article.Content, &url,
+			&article.WrittenAt, &metadata, &article.CreatedAt,
+			&liked, &article.LikeID,
+		)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to scan article: %v", err))
 			return
 		}
 
-		if err := json.NewEncoder(w).Encode(articlesWithLikes); err != nil {
-			slog.Error("Failed to encode articles response", "error", err)
+		if url.Valid {
+			article.URL = url.String
 		}
-	} else {
-		// Return regular articles without like status
-		articles := []db.Article{}
-		for rows.Next() {
-			var article db.Article
-			var url, metadata sql.NullString
-
-			err := rows.Scan(
-				&article.ID,
-				&article.SourceID,
-				&article.ExternalID,
-				&article.ProfileID,
-				&article.Title,
-				&article.Author,
-				&article.Content,
-				&url,
-				&article.WrittenAt,
-				&metadata,
-				&article.CreatedAt,
-			)
-			if err != nil {
-				respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to scan article: %v", err))
-				return
-			}
-
-			if url.Valid {
-				article.URL = url.String
-			}
-			if metadata.Valid {
-				article.Metadata = json.RawMessage(metadata.String)
-			}
-
-			articles = append(articles, article)
+		if metadata.Valid {
+			article.Metadata = json.RawMessage(metadata.String)
 		}
+		article.Liked = (liked == 1)
 
-		if err := rows.Err(); err != nil {
-			respondError(w, http.StatusInternalServerError, fmt.Sprintf("error iterating articles: %v", err))
-			return
-		}
+		articles = append(articles, article)
+	}
 
-		if err := json.NewEncoder(w).Encode(articles); err != nil {
-			slog.Error("Failed to encode articles response", "error", err)
-		}
+	if err := rows.Err(); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("error iterating articles: %v", err))
+		return
+	}
+
+	response := ArticleListResponse{
+		Articles: articles,
+		Total:    totalCount,
+		Limit:    limit,
+		Offset:   offset,
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.Error("Failed to encode articles response", "error", err)
 	}
 }
 

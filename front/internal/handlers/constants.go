@@ -12,6 +12,9 @@ const (
 
 	// DefaultArticleOffset is the starting offset for article pagination
 	DefaultArticleOffset = 0
+
+	// HomePageSize is the number of articles per page on the home page
+	HomePageSize = 10
 )
 
 // Reddit source configuration defaults and constraints

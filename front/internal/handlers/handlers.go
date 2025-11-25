@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/cheolwanpark/meows/front/internal/collector"
 	"github.com/cheolwanpark/meows/front/internal/middleware"
@@ -70,11 +71,14 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 	// Get profile ID from middleware context (if available)
 	profileID, _ := middleware.GetProfileID(r)
 
-	// Fetch articles from collector (with profile context for like status)
-	collectorArticles, err := h.collector.GetArticles(ctx, DefaultArticleLimit, DefaultArticleOffset, profileID)
+	// Parse pagination and curated parameters
+	page, curated := h.parseHomeParams(r, profileID)
+	offset := (page - 1) * HomePageSize
+
+	// Fetch articles and pagination data
+	articles, pagination, err := h.fetchArticleListData(ctx, profileID, page, offset, curated)
 	if err != nil {
 		slog.Error("Failed to fetch articles", "error", err)
-		// Render error page with proper HTTP status
 		w.WriteHeader(http.StatusServiceUnavailable)
 		component := layouts.Base("Error", csrfToken, components.ErrorPage(
 			"Service Unavailable",
@@ -82,6 +86,73 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		))
 		component.Render(r.Context(), w)
 		return
+	}
+
+	// Render page
+	component := pages.HomePage(articles, pagination, csrfToken, profileID)
+	component.Render(r.Context(), w)
+}
+
+// ArticleListPartial renders only the article list for HTMX partial updates
+func (h *Handler) ArticleListPartial(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	defer cancel()
+
+	// Get profile ID from middleware context (if available)
+	profileID, _ := middleware.GetProfileID(r)
+
+	// Parse pagination and curated parameters
+	page, curated := h.parseHomeParams(r, profileID)
+	offset := (page - 1) * HomePageSize
+
+	// Fetch articles and pagination data
+	articles, pagination, err := h.fetchArticleListData(ctx, profileID, page, offset, curated)
+	if err != nil {
+		slog.Error("Failed to fetch articles for partial", "error", err)
+		// Return error message in the partial
+		component := components.EmptyState(
+			"Unable to load articles",
+			"Please try again later.",
+		)
+		component.Render(r.Context(), w)
+		return
+	}
+
+	// Render only the article list partial
+	component := pages.ArticleList(articles, pagination, profileID)
+	component.Render(r.Context(), w)
+}
+
+// parseHomeParams extracts page and curated parameters from the request
+func (h *Handler) parseHomeParams(r *http.Request, profileID string) (page int, curated bool) {
+	// Parse page parameter (default: 1)
+	page = 1
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p >= 1 {
+			page = p
+		}
+	}
+
+	// Parse curated parameter (default: true if logged in, false otherwise)
+	curated = profileID != "" // Default to curated if logged in
+	if curatedStr := r.URL.Query().Get("curated"); curatedStr != "" {
+		curated = curatedStr == "true"
+	}
+
+	// Force curated=false if no profile (can't filter curated without profile)
+	if profileID == "" {
+		curated = false
+	}
+
+	return page, curated
+}
+
+// fetchArticleListData fetches articles and builds pagination data
+func (h *Handler) fetchArticleListData(ctx context.Context, profileID string, page, offset int, curated bool) ([]models.Article, models.Pagination, error) {
+	// Fetch articles from collector
+	response, err := h.collector.GetArticles(ctx, HomePageSize, offset, profileID, curated)
+	if err != nil {
+		return nil, models.Pagination{}, err
 	}
 
 	// Fetch sources to build source type lookup map (avoids N+1 queries)
@@ -99,9 +170,8 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to view models using source type map
-	articles := make([]models.Article, 0, len(collectorArticles))
-	for _, a := range collectorArticles {
-		// Look up source type from map, default to "reddit" if not found
+	articles := make([]models.Article, 0, len(response.Articles))
+	for _, a := range response.Articles {
 		sourceType := sourceTypeMap[a.SourceID]
 		if sourceType == "" {
 			sourceType = "reddit" // Fallback for legacy/orphaned articles
@@ -109,9 +179,23 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		articles = append(articles, models.FromCollectorArticle(a, sourceType))
 	}
 
-	// Render page
-	component := pages.HomePage(articles, csrfToken, profileID)
-	component.Render(r.Context(), w)
+	// Build pagination
+	totalPages := (response.Total + HomePageSize - 1) / HomePageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	pagination := models.Pagination{
+		CurrentPage: page,
+		TotalPages:  totalPages,
+		TotalItems:  response.Total,
+		PageSize:    HomePageSize,
+		HasPrev:     page > 1,
+		HasNext:     page < totalPages,
+		IsCurated:   curated,
+	}
+
+	return articles, pagination, nil
 }
 
 // ArticleDetail renders the article detail page with comments

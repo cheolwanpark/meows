@@ -132,3 +132,12 @@ type ArticleWithLikeStatus struct {
 	Liked  bool   `json:"liked" example:"true"`
 	LikeID string `json:"like_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 }
+
+// ArticleListResponse represents paginated articles response
+// @Description Paginated list of articles with total count
+type ArticleListResponse struct {
+	Articles []ArticleWithLikeStatus `json:"articles"`
+	Total    int                     `json:"total"`
+	Limit    int                     `json:"limit"`
+	Offset   int                     `json:"offset"`
+}
